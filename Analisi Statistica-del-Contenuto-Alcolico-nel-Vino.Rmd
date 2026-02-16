@@ -14,6 +14,7 @@ header-includes:
   - \usepackage{xcolor}
   - \usepackage{fancyvrb}
   - \usepackage{framed}
+  - \usepackage{placeins}
   - \definecolor{shadecolor}{RGB}{230,230,230}
   - \renewenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
   - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{fontsize=\small,commandchars=\\\{\}}
@@ -21,13 +22,24 @@ header-includes:
   - \definecolor{darkgray}{RGB}{180,180,180}
 ---
 
+```{r setup, include=FALSE}
+# Caricamento di tutte le librerie necessarie per l'analisi
+library(gRbase)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(GGally)
+library(corrplot)
+library(knitr)
+library(tidyr)
+library(pheatmap)
+```
+
 \newpage
 
 # Abstract {-}
 
 In questo progetto analizziamo la composizione chimica di diversi campioni di vino con l'obiettivo di valutare in che modo alcune sostanze chimiche influenzino il contenuto alcolico. L'analisi prenderà in considerazione sia l'intera popolazione dei campioni sia il ruolo della variabile categorica cultivar, al fine di verificare se il tipo di coltivazione rappresenti un fattore determinante. L'approccio metodologico integra modelli grafici indiretti per individuare dipendenze condizionali, grafi aciclici diretti per esplorare relazioni causali, e regressione lineare multipla per quantificare l'effetto dei predittori chimici sul contenuto alcolico.
-
-\newpage
 
 # Introduzione
 
@@ -38,18 +50,18 @@ Il dataset Wine è un insieme di dati classico utilizzato in ambito statistico e
 Le **13 variabili chimiche** misurate per ciascun campione sono:
 
 - **Alch** (Alcohol): contenuto alcolico
-- **Maac** (Malic Acid): acido malico
+- **Mlca** (Malic Acid): acido malico
 - **Ash**: ceneri
-- **Alca** (Alkalinity of Ash): alcalinità delle ceneri
-- **Magn** (Magnesium): magnesio
-- **Toph** (Total Phenols): fenoli totali
-- **Flav** (Flavonoids): flavonoidi
-- **Noflaph** (Nonflavanoid Phenols): fenoli non flavonoidi
-- **Proan** (Proanthocyanins): proantocianidine
-- **Coint** (Color Intensity): intensità del colore
+- **Aloa** (Alkalinity of Ash): alcalinità delle ceneri
+- **Mgns** (Magnesium): magnesio
+- **Ttlp** (Total Phenols): fenoli totali
+- **Flvn** (Flavonoids): flavonoidi
+- **Nnfp** (Nonflavanoid Phenols): fenoli non flavonoidi
+- **Prnt** (Proanthocyanins): proantocianidine
+- **Clri** (Color Intensity): intensità del colore
 - **Hue**: tonalità
-- **OD** (OD280/OD315 of diluted wines): rapporto di assorbanza
-- **Prol** (Proline): prolina
+- **Oodw** (OD280/OD315 of diluted wines): rapporto di assorbanza
+- **Prln** (Proline): prolina
 
 Inoltre, il dataset include la variabile categorica **Cult** (Cultivar) che identifica il tipo di coltivazione (1, 2 o 3) da cui proviene ciascun campione.
 
@@ -112,9 +124,6 @@ Prima di procedere con l'analisi statistica vera e propria, è fondamentale espl
 Il dataset **Wine** è disponibile nel pacchetto `gRbase` di R e contiene informazioni chimiche su 178 campioni di vino italiano. Iniziamo caricando il dataset e osservandone la struttura.
 
 ```{r caricamento-dati, message=FALSE, warning=FALSE}
-# Caricamento librerie necessarie
-library(gRbase)
-
 # Caricamento dataset Wine
 data(wine)
 
@@ -126,7 +135,7 @@ La funzione `head()` mostra le **prime 6 osservazioni** del dataset, permettendo
 
 Per ottenere una visione più completa della distribuzione dei dati, utilizziamo la funzione `summary()`:
 
-```{r statistiche-descrittive}
+```{r statistiche-descrittive, message=FALSE, warning=FALSE}
 # Statistiche descrittive per tutte le variabili
 summary(wine)
 ```
@@ -145,7 +154,7 @@ Queste statistiche sono fondamentali per identificare eventuali caratteristiche 
 
 Esaminiamo ora la struttura formale del dataset:
 
-```{r struttura-dati}
+```{r struttura-dati, message=FALSE, warning=FALSE}
 # Struttura del dataset
 str(wine)
 
@@ -162,7 +171,7 @@ Questa distinzione è cruciale per le analisi successive, poiché le tecniche st
 
 Approfondiamo la distribuzione dei campioni tra i tre cultivar:
 
-```{r distribuzione-cultivar}
+```{r distribuzione-cultivar, message=FALSE, warning=FALSE}
 # Distribuzione dei campioni per cultivar
 table(wine$Cult)
 
@@ -186,7 +195,7 @@ Come descritto nella sezione degli obiettivi, l'analisi si articola in **due fas
 
 Per la prima fase dell'analisi, creiamo un dataset che **esclude la variabile Cult**, contenente esclusivamente le 13 misure chimiche. Questo ci permetterà di studiare le relazioni chimiche "pure" tra le sostanze, indipendentemente dal tipo di coltivazione.
 
-```{r dataset-senza-cultivar}
+```{r dataset-senza-cultivar, message=FALSE, warning=FALSE}
 # Creazione dataset senza la variabile Cult
 wine_no_cult <- wine[, -which(names(wine) == "Cult")]
 
@@ -212,7 +221,7 @@ Per la seconda fase, utilizzeremo il **dataset completo** `wine` che include la 
 
 Prima di procedere, convertiamo la variabile `Cult` in fattore, se non lo è già, per assicurarci che R la tratti correttamente come variabile categorica nelle analisi successive.
 
-```{r preparazione-cultivar}
+```{r preparazione-cultivar, message=FALSE, warning=FALSE}
 # Verifica e conversione di Cult in fattore
 wine$Cult <- as.factor(wine$Cult)
 
@@ -220,39 +229,223 @@ wine$Cult <- as.factor(wine$Cult)
 levels(wine$Cult)
 ```
 
-### Verifica della Qualità dei Dati
-
-Controlliamo la presenza di eventuali valori mancanti nel dataset:
-
-```{r controllo-na}
-# Conta dei valori mancanti per variabile
-colSums(is.na(wine))
-
-# Totale valori mancanti nel dataset
-sum(is.na(wine))
-```
-
-Questa verifica è essenziale poiché la presenza di valori mancanti potrebbe richiedere tecniche di imputazione o la rimozione di osservazioni, influenzando la validità delle analisi successive.
-
-Con i dati ora preparati e verificati, possiamo procedere con l'analisi esplorativa approfondita che ci permetterà di comprendere le distribuzioni delle variabili, le loro correlazioni e le eventuali differenze tra i cultivar.
+Con i dati ora preparati possiamo procedere con l'analisi esplorativa approfondita che ci permetterà di comprendere le distribuzioni delle variabili, le loro correlazioni e le eventuali differenze tra i cultivar.
 
 \newpage
 
 # Analisi Esplorativa
 
+L'analisi esplorativa permette di comprendere le distribuzioni, identificare outlier, visualizzare relazioni bivariate, quantificare correlazioni e confrontare i cultivar.
+
+- Comprendere la **distribuzione** delle variabili chimiche e della variabile target (contenuto alcolico)
+- Identificare eventuali **outlier** o valori anomali che potrebbero influenzare le analisi successive
+- Visualizzare le **relazioni bivariate** tra le variabili attraverso grafici a dispersione
+- Quantificare le **correlazioni lineari** tra i predittori chimici e il contenuto alcolico
+- Confrontare le **caratteristiche distributive** dei tre cultivar per evidenziare eventuali differenze sistematiche
+
+L'analisi esplorativa fornisce quindi una **base intuitiva** per interpretare i risultati dei modelli più complessi che costruiremo nelle sezioni successive. In particolare, l'esame delle correlazioni tra variabili ci darà indicazioni preliminari su quali componenti chimici potrebbero essere maggiormente associati al contenuto alcolico, mentre il confronto tra cultivar ci permetterà di valutare se il tipo di coltivazione introduce variabilità sistematica nella composizione chimica del vino.
+
+In questa sezione utilizzeremo diverse tecniche di visualizzazione:
+
+1. **Density plots**: per esaminare la forma delle distribuzioni univariate, verificare la presenza di asimmetrie o multimodalità, e confrontare visivamente le distribuzioni del contenuto alcolico tra i tre cultivar
+
+2. **Boxplots**: per identificare la posizione centrale, la dispersione e la presenza di outlier, con particolare attenzione alle differenze del contenuto alcolico tra i cultivar
+
+3. **Scatterplot matrices**: per esplorare le relazioni bivariate tra le variabili chimiche più rilevanti e individuare pattern lineari o non lineari
+
+4. **Matrici di correlazione e heatmap**: per quantificare e visualizzare l'intensità delle associazioni lineari tra tutte le coppie di variabili, sia per l'intera popolazione che separatamente per ciascun cultivar
+
+Questa esplorazione visiva e numerica ci consentirà di formulare **ipotesi informate** sulle relazioni tra variabili che saranno successivamente testate formalmente attraverso modelli grafici e regressione lineare multipla.
+
 ## Statistiche Descrittive e Density Plot
+
+Iniziamo l'analisi esplorativa esaminando la distribuzione della nostra **variabile target**: il contenuto alcolico (Alch). La Tabella seguente riporta le principali statistiche descrittive per l'intera popolazione e per ciascun cultivar.
+
+```{r stat-descrittive-alch, message=FALSE, warning=FALSE}
+# Statistiche per l'intera popolazione
+stat_globali <- wine %>%
+  summarise(
+    Gruppo = "Globale",
+    N = n(),
+    Media = round(mean(Alch), 2),
+    Dev_Std = round(sd(Alch), 2),
+    Minimo = round(min(Alch), 2),
+    Q1 = round(quantile(Alch, 0.25), 2),
+    Mediana = round(median(Alch), 2),
+    Q3 = round(quantile(Alch, 0.75), 2),
+    Massimo = round(max(Alch), 2)
+  )
+
+# Statistiche per cultivar
+stat_cultivar <- wine %>%
+  group_by(Cult) %>%
+  summarise(
+    N = n(),
+    Media = round(mean(Alch), 2),
+    Dev_Std = round(sd(Alch), 2),
+    Minimo = round(min(Alch), 2),
+    Q1 = round(quantile(Alch, 0.25), 2),
+    Mediana = round(median(Alch), 2),
+    Q3 = round(quantile(Alch, 0.75), 2),
+    Massimo = round(max(Alch), 2)
+  ) %>%
+  mutate(Gruppo = paste("Cultivar", ifelse(Cult == "v1", "1", ifelse(Cult == "v2", "2", "3")))) %>%
+  select(Gruppo, N, Media, Dev_Std, Minimo, Q1, Mediana, Q3, Massimo)
+
+# Unione delle tabelle
+stat_complete <- bind_rows(stat_globali, stat_cultivar)
+
+# Visualizzazione tabella
+knitr::kable(stat_complete, caption = "Statistiche descrittive del contenuto alcolico")
+```
+
+\vspace{-1.5em}
+
+Il contenuto alcolico presenta un range complessivo da `r round(min(wine$Alch), 2)`% a `r round(max(wine$Alch), 2)`% con media globale di `r round(mean(wine$Alch), 2)`%. Si osserva una netta differenziazione tra i tre cultivar: il Cultivar 1 mostra i valori medi più elevati, il Cultivar 3 presenta valori intermedi, mentre il Cultivar 2 registra i contenuti alcolici più bassi. Questa separazione è visivamente evidente nella Figura seguente.
+
+```{r density-alch, fig.width=5.5, fig.height=1.5, fig.cap="Distribuzione del contenuto alcolico per cultivar e popolazione generale", message=FALSE, warning=FALSE, fig.pos="H"}
+ggplot(wine, aes(x = Alch)) +
+  geom_density(aes(fill = Cult), alpha = 0.6) +
+  geom_density(aes(linetype = "Popolazione Generale"), color = "black", size = 0.8) +
+  scale_fill_manual(values = c("v1" = "#E69F00", "v2" = "#56B4E9", "v3" = "#009E73"),
+                    labels = c("Cultivar 1", "Cultivar 2", "Cultivar 3"),
+                    name = NULL) +
+  scale_linetype_manual(values = c("Popolazione Generale" = "dashed"),
+                        name = NULL) +
+  labs(x = "Contenuto Alcolico (%)",
+       y = "Densità") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        legend.text = element_text(size = 7),
+        legend.key.size = unit(0.4, "cm"))
+```
+
+Le distribuzioni mostrano una chiara separazione tra i tre gruppi con limitata sovrapposizione, suggerendo che il tipo di cultivar rappresenta un fattore determinante per il contenuto alcolico. Questa evidente differenza giustifica il nostro approccio a due fasi: prima analizzeremo le relazioni chimiche senza considerare il cultivar (Fase 1), poi lo includeremo esplicitamente nei modelli per valutarne l'effetto (Fase 2).
 
 ## BoxPlot
 
+Per approfondire l'analisi delle distribuzioni, utilizziamo dei boxplot che consentono di visualizzare sinteticamente la posizione centrale, la dispersione e la presenza di eventuali valori anomali del contenuto alcolico. Il confronto tra la popolazione generale e i singoli cultivar evidenzia l'effetto della stratificazione sulla variabilità osservata.
+
+```{r boxplot-alch, fig.width=6.5, fig.height=2.5, fig.cap="Boxplot del contenuto alcolico: popolazione generale e per cultivar", message=FALSE, warning=FALSE, fig.pos="H"}
+# Boxplot popolazione generale
+p1 <- ggplot(wine, aes(x = "", y = Alch)) +
+  geom_boxplot(fill = "gray70", alpha = 0.7, outlier.colour = "red", outlier.shape = 16,
+    outlier.size = 1.5) +
+  labs(x = "Popolazione Generale", y = "Contenuto Alcolico (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 9))
+
+# Boxplot per cultivar
+p2 <- ggplot(wine, aes(x = Cult, y = Alch, fill = Cult)) +
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.shape = 16, outlier.size = 1.5) +
+  scale_fill_manual(values = c("v1" = "#E69F00", "v2" = "#56B4E9", "v3" = "#009E73")) +
+  scale_x_discrete(labels = c("Cultivar 1", "Cultivar 2", "Cultivar 3")) +
+  labs(x = "Cultivar", y = "Contenuto Alcolico (%)") +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(size = 8))
+
+grid.arrange(p1, p2, ncol = 2, widths = c(1, 2))
+```
+
+Il confronto è illuminante: il boxplot della popolazione generale mostra una variabilità elevata (intervallo 11-15%) che riflette la sovrapposizione delle tre distribuzioni cultivar-specifiche. Quando stratifichiamo per cultivar (pannello destro), osserviamo mediane ben distinte con l'ordinamento già evidenziato (Cultivar 1 > Cultivar 3 > Cultivar 2) e intervalli interquartili notevolmente più ristretti. Questo conferma che il cultivar è un fattore determinante del contenuto alcolico e che ignorarlo nella modellazione comporterebbe una perdita significativa di potere esplicativo. Eventuali valori anomali (punti rossi) indicano osservazioni che si discostano significativamente dalla distribuzione del proprio gruppo.
+
 ## Matrici Scatterplot
+
+Le matrici di scatterplot permettono di esplorare simultaneamente le relazioni bivariate tra tutte le variabili chimiche del dataset. Questa visualizzazione completa consente di identificare pattern, correlazioni e potenziali problemi di multicollinearità che influenzeranno le analisi successive.
+
+```{r scatterplot-matrix, fig.width=9, fig.height=9, fig.cap="Matrice di scatterplot dell'intera popolazione", message=FALSE, warning=FALSE, fig.pos="H"}
+# Matrice di scatterplot completa
+plot(wine_no_cult, 
+     pch = 20,
+     cex = 0.3,
+     col = rgb(0, 0, 0.8, 0.3))
+```
+
+La matrice completa rivela la **struttura di dipendenza** tra tutte le variabili chimiche. Osservando la prima riga/colonna (Alch), emergono correlazioni moderate con Prln (prolina, r=0.64) e Clri (intensità del colore, r=0.55), che si confermano come i predittori candidati principali per il contenuto alcolico. Si evidenzia una **forte multicollinearità** in diversi cluster di variabili: i composti fenolici (Flvn-Ttlp r=0.86, Flvn-Oodw r=0.79) mostrano intercorrelazioni elevate, così come alcune misure chimiche secondarie. Questi pattern richiederanno particolare attenzione nella fase di modellazione per evitare problemi di instabilità. Gli scatterplot mostrano prevalentemente relazioni lineari, validando l'appropriatezza di approcci basati su modelli gaussiani.
 
 ## Matrice di Correlazione
 
+La matrice di correlazione quantifica l'intensità e la direzione delle relazioni lineari tra tutte le coppie di variabili chimiche, fornendo una sintesi numerica dei pattern osservati negli scatterplot.
+
 ### Correlazioni - Intera Popolazione
+
+Analizziamo la struttura di correlazione dell'intera popolazione, senza distinzione per cultivar, per identificare le variabili più associate al contenuto alcolico e individuare eventuali problemi di multicollinearità.
+
+```{r correlazione-popolazione, fig.width=7, fig.height=3.5, fig.cap="Matrice di correlazione - Intera popolazione", message=FALSE, warning=FALSE, fig.pos="p"}
+# Calcolo della matrice di correlazione
+cor_matrix <- cor(wine_no_cult)
+
+# Visualizzazione con corrplot
+corrplot(cor_matrix, 
+         method = "color",
+         type = "upper",
+         order = "original",
+         tl.col = "black",
+         tl.cex = 0.7,
+         tl.srt = 45,
+         addCoef.col = "black",
+         number.cex = 0.5,
+         col = colorRampPalette(c("#6D9EC1", "white", "#E46726"))(200),
+         mar = c(0, 0, 0, 0))
+```
+
+\vspace{-0.5em}
+
+Le variabili più fortemente correlate con Alch sono Prln (r=0.64), Clri (r=0.55), Ttlp (r=0.29) e Mgns (r=0.27), confermando la prolina e l'intensità del colore come predittori candidati principali. Si osserva una **forte multicollinearità** tra Flvn-Ttlp (r=0.86) e Flvn-Oodw (r=0.79), suggerendo che questi composti fenolici condividono informazione ridondante. Le correlazioni negative sono generalmente deboli, con Aloa-Alch (r=-0.31) e Nnfp-Alch (r=-0.16) come più rilevanti. Questa struttura di dipendenza guiderà la selezione delle variabili nei modelli successivi.
 
 ### Correlazioni per Cultivar - Confronto
 
+Verifichiamo se le relazioni lineari tra variabili rimangono costanti attraverso i tre cultivar o se il tipo di coltivazione modifica la struttura di correlazione.
+
+```{r confronto-correlazioni-cultivar, fig.width=6.5, fig.height=3, fig.cap="Confronto correlazioni con Alch per cultivar", message=FALSE, warning=FALSE, fig.pos="p"}
+# Calcolo correlazioni con Alch per ciascun cultivar
+wine_c1 <- wine %>% filter(Cult == "v1") %>% select(-Cult)
+wine_c2 <- wine %>% filter(Cult == "v2") %>% select(-Cult)
+wine_c3 <- wine %>% filter(Cult == "v3") %>% select(-Cult)
+
+cor_alch_c1 <- cor(wine_c1)[, "Alch"]
+cor_alch_c2 <- cor(wine_c2)[, "Alch"]
+cor_alch_c3 <- cor(wine_c3)[, "Alch"]
+
+# Creazione dataframe per visualizzazione
+df_comp <- data.frame(
+  Variabile = names(cor_alch_c1)[names(cor_alch_c1) != "Alch"],
+  Cultivar_1 = cor_alch_c1[names(cor_alch_c1) != "Alch"],
+  Cultivar_2 = cor_alch_c2[names(cor_alch_c2) != "Alch"],
+  Cultivar_3 = cor_alch_c3[names(cor_alch_c3) != "Alch"]
+)
+
+# Reshape per ggplot
+df_long <- df_comp %>%
+  pivot_longer(cols = starts_with("Cultivar"), 
+               names_to = "Cultivar", 
+               values_to = "Correlazione") %>%
+  mutate(Cultivar = gsub("Cultivar_", "Cultivar ", Cultivar))
+
+# Grafico a punti
+ggplot(df_long, aes(x = Variabile, y = Correlazione, color = Cultivar, shape = Cultivar)) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = c("Cultivar 1" = "#E69F00", 
+                                 "Cultivar 2" = "#56B4E9", 
+                                 "Cultivar 3" = "#009E73")) +
+  scale_shape_manual(values = c("Cultivar 1" = 16, "Cultivar 2" = 17, "Cultivar 3" = 15)) +
+  labs(x = "Variabile", 
+       y = "Correlazione con Alch",
+       color = NULL,
+       shape = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+        legend.position = "top")
+```
+
+\FloatBarrier
+
+Il confronto rivela **eterogeneità marcata** nelle relazioni lineari tra cultivar. Poche variabili mostrano stabilità: **Ash** e **Hue** presentano correlazioni simili attraverso i tre gruppi (rispettivamente ~0.2 e ~0). Al contrario, si osservano **variazioni sostanziali** per **Prnt** (range -0.2 a +0.3), **Aloa** (-0.3 a +0.2), **Flvn, Ttlp** e **Prln**, dove Cultivar 2 mostra sistematicamente correlazioni prossime allo zero o negative, mentre Cultivar 1 (e in parte 3) presentano valori positivi moderati-forti. Questa eterogeneità indica che il cultivar modifica significativamente la struttura di dipendenza lineare, giustificando l'inclusione di termini di interazione o modelli cultivar-specifici nelle analisi predittive.
+
 ## Heatmap delle Correlazioni
+
+## Sintesi dell'Analisi Esplorativa
 
 \newpage
 
