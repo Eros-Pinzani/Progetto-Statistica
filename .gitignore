@@ -1,0 +1,36 @@
+# R History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+.RDataTmp
+
+# User-specific files
+.Ruserdata
+
+# RStudio files
+.Rproj.user/
+
+# Output files (generated from .Rmd)
+*.pdf
+*.html
+*.tex
+*.log
+*.aux
+*.out
+*.toc
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# Temporary files
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Knitr cache
+*_cache/
+*_files/

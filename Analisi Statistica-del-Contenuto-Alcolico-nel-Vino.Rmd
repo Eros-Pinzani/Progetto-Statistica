@@ -1,0 +1,321 @@
+---
+title: "Analisi Statistica del Contenuto Alcolico nel Vino"
+subtitle: "Modelli Grafici e Predittivi sul Wine Dataset"
+author: "Eros Pinzani"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_caption: true
+    highlight: tango
+    keep_tex: false
+header-includes:
+  - \usepackage{xcolor}
+  - \usepackage{fancyvrb}
+  - \usepackage{framed}
+  - \definecolor{shadecolor}{RGB}{230,230,230}
+  - \renewenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{fontsize=\small,commandchars=\\\{\}}
+  - \RecustomVerbatimEnvironment{verbatim}{Verbatim}{fontsize=\footnotesize,frame=single,framesep=3mm,rulecolor=\color{darkgray}}
+  - \definecolor{darkgray}{RGB}{180,180,180}
+---
+
+\newpage
+
+# Abstract {-}
+
+In questo progetto analizziamo la composizione chimica di diversi campioni di vino con l'obiettivo di valutare in che modo alcune sostanze chimiche influenzino il contenuto alcolico. L'analisi prenderà in considerazione sia l'intera popolazione dei campioni sia il ruolo della variabile categorica cultivar, al fine di verificare se il tipo di coltivazione rappresenti un fattore determinante. L'approccio metodologico integra modelli grafici indiretti per individuare dipendenze condizionali, grafi aciclici diretti per esplorare relazioni causali, e regressione lineare multipla per quantificare l'effetto dei predittori chimici sul contenuto alcolico.
+
+\newpage
+
+# Introduzione
+
+## Il Dataset Wine
+
+Il dataset Wine è un insieme di dati classico utilizzato in ambito statistico e di machine learning, contiene i risultati di analisi chimiche condotte su 178 campioni di vino provenienti dalla stessa regione italiana ma prodotti da tre diversi coltivatori (cultivar).
+
+Le **13 variabili chimiche** misurate per ciascun campione sono:
+
+- **Alch** (Alcohol): contenuto alcolico
+- **Maac** (Malic Acid): acido malico
+- **Ash**: ceneri
+- **Alca** (Alkalinity of Ash): alcalinità delle ceneri
+- **Magn** (Magnesium): magnesio
+- **Toph** (Total Phenols): fenoli totali
+- **Flav** (Flavonoids): flavonoidi
+- **Noflaph** (Nonflavanoid Phenols): fenoli non flavonoidi
+- **Proan** (Proanthocyanins): proantocianidine
+- **Coint** (Color Intensity): intensità del colore
+- **Hue**: tonalità
+- **OD** (OD280/OD315 of diluted wines): rapporto di assorbanza
+- **Prol** (Proline): prolina
+
+Inoltre, il dataset include la variabile categorica **Cult** (Cultivar) che identifica il tipo di coltivazione (1, 2 o 3) da cui proviene ciascun campione.
+
+## Variabile Target: Contenuto Alcolico
+
+In questa analisi, la variabile **Alch** (contenuto alcolico) rappresenta la nostra variabile target. Il contenuto alcolico è una delle caratteristiche più rilevanti nella valutazione della qualità del vino e dipende da molteplici fattori biochimici che intervengono durante il processo di fermentazione e produzione.
+
+Comprendere quali componenti chimici influenzino maggiormente il contenuto alcolico permette di:
+
+1. Identificare le **relazioni causali** tra la composizione chimica e il grado alcolico
+2. Costruire **modelli predittivi** per stimare il contenuto alcolico a partire da altre misure chimiche
+3. Valutare se e come il **tipo di cultivar** influenzi tali relazioni
+
+## Obiettivi dello Studio
+
+L'obiettivo principale di questo studio è analizzare il contenuto alcolico nel vino utilizzando tecniche statistiche avanzate per comprendere le relazioni tra le variabili chimiche e il ruolo del cultivar. L'analisi si articola in due fasi distinte:
+
+### Fase 1: Analisi della Popolazione Globale (senza Cultivar)
+
+Nella prima fase analizziamo l'intero dataset **escludendo la variabile Cult**, concentrandoci esclusivamente sulle relazioni chimiche pure tra le sostanze. Questo approccio permette di:
+
+- Identificare le **dipendenze condizionali** tra le variabili chimiche attraverso modelli grafici indiretti (Gaussian Graphical Models)
+- Studiare le **relazioni causali** tra componenti chimici mediante grafi aciclici diretti (DAG)
+- Costruire **modelli predittivi** per il contenuto alcolico basati unicamente su fattori chimici
+- Comprendere la struttura intrinseca delle relazioni biochimiche indipendentemente dal tipo di coltivazione
+
+### Fase 2: Analisi con Cultivar
+
+Nella seconda fase includiamo la variabile **Cult** per valutare l'impatto del tipo di cultivar sulla composizione chimica e sul contenuto alcolico. Questa analisi permette di:
+
+- Verificare se il cultivar modifica le **relazioni di dipendenza** tra le variabili chimiche
+- Determinare se il tipo di coltivazione ha un **effetto diretto** sul contenuto alcolico
+- Confrontare i modelli con e senza cultivar per valutare il **contributo informativo** di questa variabile categorica
+- Esplorare eventuali **pattern di interazione** tra cultivar e componenti chimici
+
+### Metodologia
+
+Per raggiungere questi obiettivi utilizzeremo tre approcci statistici complementari:
+
+1. **Modelli Grafici Indiretti (Gaussian Graphical Models)**: per identificare le dipendenze condizionali tra variabili attraverso la matrice di concentrazione (inversa della matrice di covarianza)
+
+2. **Modelli Grafici Diretti (DAG - Directed Acyclic Graphs)**: per esplorare possibili relazioni causali tra le variabili chimiche e il contenuto alcolico
+
+3. **Regressione Lineare Multipla**: per quantificare l'effetto dei predittori chimici sul contenuto alcolico e valutare la capacità predittiva dei modelli
+
+## Software
+
+L'analisi è condotta utilizzando il software **R**, un ambiente open-source ampiamente utilizzato per l'analisi statistica e la modellizzazione dei dati. Sono stati impiegati diversi pacchetti specializzati per l'analisi di modelli grafici gaussiani, l'inferenza causale tramite grafi aciclici diretti, la visualizzazione dei dati e la regressione lineare multipla.
+
+Il codice R Markdown utilizzato per generare questo documento garantisce la **riproducibilità** completa dell'analisi.
+
+\newpage
+
+# Osservazioni e Preprocessing dei Dati
+
+Prima di procedere con l'analisi statistica vera e propria, è fondamentale esplorare la struttura del dataset e preparare i dati in modo adeguato per le diverse fasi dell'analisi.
+
+## Visualizzazione Dataset
+
+Il dataset **Wine** è disponibile nel pacchetto `gRbase` di R e contiene informazioni chimiche su 178 campioni di vino italiano. Iniziamo caricando il dataset e osservandone la struttura.
+
+```{r caricamento-dati, message=FALSE, warning=FALSE}
+# Caricamento librerie necessarie
+library(gRbase)
+
+# Caricamento dataset Wine
+data(wine)
+
+# Visualizzazione delle prime righe
+head(wine)
+```
+
+La funzione `head()` mostra le **prime 6 osservazioni** del dataset, permettendoci di vedere i valori "grezzi" delle variabili per i primi campioni di vino. Questo ci consente di verificare immediatamente il formato dei dati e di avere un'idea dei range di valori per ciascuna variabile chimica. Possiamo osservare, ad esempio, che il contenuto alcolico (Alch) varia tra valori intorno a 13-14%, mentre la prolina (Prol) presenta valori nell'ordine delle centinaia.
+
+Per ottenere una visione più completa della distribuzione dei dati, utilizziamo la funzione `summary()`:
+
+```{r statistiche-descrittive}
+# Statistiche descrittive per tutte le variabili
+summary(wine)
+```
+
+Il `summary()` fornisce una panoramica statistica completa del dataset:
+
+- Per le **variabili numeriche** (Alch, Maac, Ash, ecc.), vengono calcolati:
+  - **Min** e **Max**: valori minimo e massimo osservati
+  - **1st Qu.** e **3rd Qu.**: primo e terzo quartile (25° e 75° percentile)
+  - **Median**: valore mediano (50° percentile)
+  - **Mean**: media aritmetica
+  
+- Per la **variabile categorica Cult**, viene mostrata la **frequenza** di ciascun livello (cultivar)
+
+Queste statistiche sono fondamentali per identificare eventuali caratteristiche peculiari delle variabili, come la presenza di outlier o distribuzioni asimmetriche.
+
+Esaminiamo ora la struttura formale del dataset:
+
+```{r struttura-dati}
+# Struttura del dataset
+str(wine)
+
+# Dimensioni del dataset
+dim(wine)
+```
+
+La funzione `str()` (structure) rivela che il dataset contiene **`r nrow(wine)` osservazioni** (campioni di vino) e **`r ncol(wine)` variabili**. Possiamo notare che:
+
+- Le prime 13 variabili (da **Alch** a **Prol**) sono **variabili numeriche continue** (`num`) che rappresentano misure chimiche ottenute tramite analisi di laboratorio
+- La variabile **Cult** è una variabile **categorica** (`Factor`) con tre livelli (v1, v2, v3), che identifica il tipo di cultivar da cui proviene ciascun campione
+
+Questa distinzione è cruciale per le analisi successive, poiché le tecniche statistiche appropriate differiscono a seconda della natura delle variabili.
+
+Approfondiamo la distribuzione dei campioni tra i tre cultivar:
+
+```{r distribuzione-cultivar}
+# Distribuzione dei campioni per cultivar
+table(wine$Cult)
+
+# Proporzioni percentuali
+round(prop.table(table(wine$Cult)) * 100, 1)
+```
+
+La tabella di frequenza mostra che:
+
+- Il **cultivar v1** conta 59 campioni (33.1% del totale)
+- Il **cultivar v2** è il più rappresentato con 71 campioni (39.9%)
+- Il **cultivar v3** presenta 48 campioni (27.0%)
+
+Sebbene i tre cultivar non siano perfettamente bilanciati, tutti presentano un **numero sufficiente di osservazioni** (n > 30) per condurre analisi statistiche robuste e ottenere stime affidabili sia per l'intera popolazione che per i singoli gruppi.
+
+## Preparazione dei Dati
+
+Come descritto nella sezione degli obiettivi, l'analisi si articola in **due fasi distinte** che richiedono due versioni del dataset:
+
+### Dataset per la Fase 1: Popolazione Globale
+
+Per la prima fase dell'analisi, creiamo un dataset che **esclude la variabile Cult**, contenente esclusivamente le 13 misure chimiche. Questo ci permetterà di studiare le relazioni chimiche "pure" tra le sostanze, indipendentemente dal tipo di coltivazione.
+
+```{r dataset-senza-cultivar}
+# Creazione dataset senza la variabile Cult
+wine_no_cult <- wine[, -which(names(wine) == "Cult")]
+
+# Verifica della struttura
+dim(wine_no_cult)
+names(wine_no_cult)
+```
+
+Il dataset `wine_no_cult` contiene **`r ncol(wine_no_cult)` variabili** (tutte continue) e sarà utilizzato per:
+
+- Analisi esplorativa delle relazioni chimiche
+- Costruzione di modelli grafici indiretti (UG)
+- Inferenza di grafi causali (DAG) senza l'influenza del cultivar
+- Modelli di regressione basati esclusivamente su predittori chimici
+
+### Dataset per la Fase 2: Analisi Completa con Cultivar
+
+Per la seconda fase, utilizzeremo il **dataset completo** `wine` che include la variabile categorica **Cult**. Questo ci permetterà di:
+
+- Valutare l'effetto del tipo di cultivar sulle relazioni tra variabili chimiche
+- Verificare se il cultivar influenza direttamente il contenuto alcolico
+- Confrontare i modelli con e senza cultivar
+
+Prima di procedere, convertiamo la variabile `Cult` in fattore, se non lo è già, per assicurarci che R la tratti correttamente come variabile categorica nelle analisi successive.
+
+```{r preparazione-cultivar}
+# Verifica e conversione di Cult in fattore
+wine$Cult <- as.factor(wine$Cult)
+
+# Verifica dei livelli
+levels(wine$Cult)
+```
+
+### Verifica della Qualità dei Dati
+
+Controlliamo la presenza di eventuali valori mancanti nel dataset:
+
+```{r controllo-na}
+# Conta dei valori mancanti per variabile
+colSums(is.na(wine))
+
+# Totale valori mancanti nel dataset
+sum(is.na(wine))
+```
+
+Questa verifica è essenziale poiché la presenza di valori mancanti potrebbe richiedere tecniche di imputazione o la rimozione di osservazioni, influenzando la validità delle analisi successive.
+
+Con i dati ora preparati e verificati, possiamo procedere con l'analisi esplorativa approfondita che ci permetterà di comprendere le distribuzioni delle variabili, le loro correlazioni e le eventuali differenze tra i cultivar.
+
+\newpage
+
+# Analisi Esplorativa
+
+## Statistiche Descrittive e Density Plot
+
+## BoxPlot
+
+## Matrici Scatterplot
+
+## Matrice di Correlazione
+
+### Correlazioni - Intera Popolazione
+
+### Correlazioni per Cultivar - Confronto
+
+## Heatmap delle Correlazioni
+
+\newpage
+
+# Modelli Grafici Indiretti
+
+## Introduzione alla Matrice di Concentrazione
+
+## Matrice di Concentrazione - Intera Popolazione
+
+### Correlazioni Parziali - Intera Popolazione
+
+## Selezione Modello
+
+## Grafo Indiretto - Intera Popolazione
+
+## Grafo Indiretto - Wine Dataset con Cultivar
+
+## Risultati Ottenuti
+
+\newpage
+
+# Modelli Grafici Diretti (DAG)
+
+## DAG - Intera Popolazione
+
+### DAG Libero
+
+### DAG con Alch come Variabile Target
+
+## DAG - Wine Dataset con Cultivar
+
+### DAG Libero con Cultivar
+
+### DAG con Variabili Esogene e Target
+
+## Considerazioni sui DAG
+
+\newpage
+
+# Modello Predittivo
+
+## Intera Popolazione
+
+### Definizione Modelli Base
+
+### Selezione con BIC
+
+### Diagnostica del Modello
+
+### Verifica Multicollinearità
+
+## Wine Dataset con Cultivar
+
+### Definizione Modelli Base
+
+### Selezione con BIC
+
+### Diagnostica del Modello
+
+## Confronto Modelli
+
+\newpage
+
+# Conclusioni
+
+## Bibliografia
