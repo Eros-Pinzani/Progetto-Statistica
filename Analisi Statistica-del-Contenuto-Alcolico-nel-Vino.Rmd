@@ -1161,23 +1161,311 @@ Imporre il vincolo che Alch sia un nodo sink ha modificato sostanzialmente la st
 
 Questa analisi dimostra l'importanza di **integrare conoscenza del dominio** nell'inferenza causale: i vincoli espliciti guidano l'algoritmo verso strutture causali più plausibili e utili per l'interpretazione scientifica e la modellazione predittiva.
 
-**Collegamento con i Grafi Indiretti (Capitolo 4):**
-
-Prima di procedere con l'analisi che include il cultivar, è utile confrontare i risultati tra grafi indiretti (UG) e grafi diretti (DAG):
-
-- Nel **Capitolo 4** (grafi indiretti), abbiamo identificato le variabili connesse ad Alch tramite archi non orientati, che indicano dipendenze condizionali ma non specificano la direzione della relazione causale.
-
-- In questo capitolo, il **DAG vincolato** fornisce informazioni più specifiche: identifica non solo quali variabili sono dipendenti da Alch, ma anche la **direzione causale**, specificando quali variabili agiscono come predittori diretti del contenuto alcolico.
-
-- Confrontando i due grafi, possiamo osservare che alcune variabili connesse ad Alch nel grafo indiretto sono state identificate come **genitori diretti** nel DAG, mentre altre potrebbero influenzare Alch solo indirettamente, attraverso catene causali mediate da altre variabili.
-
 ## DAG - Con Cultivar
 
 ### DAG Libero con Cultivar
 
+Includiamo ora la variabile **Cult** nell'analisi dei DAG. Come nel Capitolo 4, utilizziamo due **variabili dummy** (Cult_v2 e Cult_v3) per rappresentare i tre livelli del cultivar, con v1 come riferimento. Questo permette di valutare come il tipo di coltivazione modifichi la struttura causale tra le variabili chimiche e il contenuto alcolico.
+
+Iniziamo con un DAG libero, senza vincoli di orientamento, per esplorare la struttura causale suggerita dai soli dati osservazionali.
+
+```{r dag-libero-cultivar, message=FALSE, warning=FALSE, cache=TRUE}
+# Preparazione dataset con dummy variables per cultivar
+wine_cult <- wine %>%
+  mutate(Cult_v2 = as.numeric(Cult == "v2"),
+         Cult_v3 = as.numeric(Cult == "v3")) %>%
+  select(-Cult) %>%
+  as.data.frame()
+
+# Conversione a numeric per bnlearn
+wine_cult <- as.data.frame(lapply(wine_cult, as.numeric))
+
+# Apprendimento DAG libero
+dag_libero_cult <- hc(wine_cult, score = "bic-g")
+
+# Numero di archi
+n_archi_dag_cult <- narcs(dag_libero_cult)
+cat("Numero di archi nel DAG libero con cultivar:", n_archi_dag_cult, "\n")
+cat("Numero di archi nel DAG libero senza cultivar:", n_archi_dag, "\n")
+
+# Conversione in igraph
+dag_cult_igraph <- as.igraph(dag_libero_cult)
+```
+
+Il DAG con cultivar contiene più nodi (15 variabili invece di 13) e potenzialmente una struttura più complessa. Visualizziamo il grafo:
+
+```{r dag-libero-cult-plot, fig.width=6.5, fig.height=4.5, out.width="88%", out.height="4in", message=FALSE, warning=FALSE, echo=TRUE}
+# Identificazione genitori e figli di Alch
+genitori_alch_cult <- parents(dag_libero_cult, "Alch")
+figli_alch_cult <- children(dag_libero_cult, "Alch")
+
+# Identificazione figli di Cult_v2 e Cult_v3 (variabili influenzate dal cultivar)
+figli_cult_v2 <- children(dag_libero_cult, "Cult_v2")
+figli_cult_v3 <- children(dag_libero_cult, "Cult_v3")
+figli_cult <- unique(c(figli_cult_v2, figli_cult_v3))
+
+# Colorazione dei nodi
+colori_nodi_dag_cult <- ifelse(V(dag_cult_igraph)$name == "Alch", "#E46726",
+                         ifelse(V(dag_cult_igraph)$name %in% c("Cult_v2", "Cult_v3"), "#9370DB",
+                         ifelse(V(dag_cult_igraph)$name %in% genitori_alch_cult, "#FFD700",
+                         ifelse(V(dag_cult_igraph)$name %in% figli_alch_cult,
+                          "#90EE90", "#6D9EC1"))))
+
+# Layout gerarchico
+set.seed(567)
+layout_dag_cult <- layout_with_sugiyama(dag_cult_igraph)$layout
+
+# Margini ridotti
+par(mar = c(1, 1, 0.5, 1))
+
+# Plot
+plot(dag_cult_igraph,
+     layout = layout_dag_cult,
+     vertex.size = 8,
+     vertex.color = colori_nodi_dag_cult,
+     vertex.frame.color = "gray30",
+     vertex.label.cex = 0.7,
+     vertex.label.color = "black",
+     vertex.label.font = 2,
+     edge.color = "gray50",
+     edge.width = 1.5,
+     edge.arrow.size = 0.5,
+     edge.curved = 0.1,
+     main = "")
+
+# Legenda
+legend("bottomleft",
+       legend = c("Alch (target)", "Cult_v2/v3 (cultivar)", 
+                  "Genitori di Alch", "Figli di Alch", "Altre variabili"),
+       fill = c("#E46726", "#9370DB", "#FFD700", "#90EE90", "#6D9EC1"),
+       cex = 0.55,
+       bty = "n")
+```
+
+\begingroup
+\captionof{figure}{DAG libero con cultivar - Dataset completo}
+\endgroup
+
+Analizziamo la struttura causale di Alch e delle variabili cultivar:
+
+```{r dag-cult-analisi, message=FALSE, warning=FALSE}
+cat("Genitori di Alch (predittori diretti):", 
+    if(length(genitori_alch_cult) > 0) paste(genitori_alch_cult, collapse = ", ") else "Nessuno", "\n")
+cat("Figli di Alch (variabili causate da Alch):", 
+    if(length(figli_alch_cult) > 0) paste(figli_alch_cult, collapse = ", ") else "Nessuno", "\n\n")
+
+cat("Figli di Cult_v2:", 
+    if(length(figli_cult_v2) > 0) paste(figli_cult_v2, collapse = ", ") else "Nessuno", "\n")
+cat("Figli di Cult_v3:", 
+    if(length(figli_cult_v3) > 0) paste(figli_cult_v3, collapse = ", ") else "Nessuno", "\n")
+```
+
+Il DAG libero con cultivar rivela come il tipo di coltivazione influenzi altre variabili (figli di Cult_v2 e Cult_v3) e come queste, a loro volta, possano influenzare il contenuto alcolico. Tuttavia, come osservato per il DAG senza cultivar, l'orientazione automatica degli archi può produrre strutture causali poco interpretabili: potremmo osservare archi che vanno da Alch verso variabili chimiche, o dalle variabili chimiche verso il cultivar, orientazioni che contraddicono la conoscenza del dominio.
+
+Per ottenere una struttura causale più coerente con la realtà enologica, nella prossima sezione imponiamo vincoli espliciti basati sulla conoscenza del dominio.
+
 ### DAG con Cult Esogena e Alch Target
 
+Per imporre una struttura causale interpretabile, costruiamo un **DAG doppiamente vincolato** dove:
+
+1. **Cult_v2 e Cult_v3 sono variabili esogene** (source nodes): possono solo influenzare altre variabili, non essere influenzate. Il tipo di coltivazione è determinato esogenamente (scelta agronomica) e non può essere causato dalle proprietà chimiche del vino.
+
+2. **Alch è variabile target** (sink node): può solo ricevere influenze, non causarne. Come visto nella sezione 5.1.2, questa è l'interpretazione enologica corretta.
+
+Questi vincoli garantiscono una **struttura gerarchica causale**: Cult → variabili chimiche → Alch.
+
+```{r dag-vincolato-cultivar, message=FALSE, warning=FALSE, cache=TRUE}
+# Blacklist 1: Cult_v2 e Cult_v3 non possono avere genitori (sono esogene)
+altre_vars_cult <- setdiff(names(wine_cult), c("Cult_v2", "Cult_v3"))
+
+# Costruzione più esplicita della blacklist per Cult
+blacklist_cult_v2 <- data.frame(
+  from = altre_vars_cult,
+  to = rep("Cult_v2", length(altre_vars_cult))
+)
+blacklist_cult_v3 <- data.frame(
+  from = altre_vars_cult,
+  to = rep("Cult_v3", length(altre_vars_cult))
+)
+blacklist_cult_source <- rbind(blacklist_cult_v2, blacklist_cult_v3)
+
+# Blacklist 2: Alch non può essere genitore (è sink)
+altre_vars_no_alch <- setdiff(names(wine_cult), "Alch")
+blacklist_alch_sink <- data.frame(
+  from = rep("Alch", length(altre_vars_no_alch)),
+  to = altre_vars_no_alch
+)
+
+# Blacklist 3: Cult_v2 e Cult_v3 non possono influenzarsi a vicenda (sono dummy della stessa variabile)
+blacklist_cult_mutual <- data.frame(
+  from = c("Cult_v2", "Cult_v3"),
+  to = c("Cult_v3", "Cult_v2")
+)
+
+# Combinazione delle blacklist
+blacklist_completa <- rbind(blacklist_cult_source, blacklist_alch_sink, blacklist_cult_mutual)
+
+# Apprendimento DAG vincolato
+dag_vinc_cult <- hc(wine_cult, score = "bic-g", blacklist = blacklist_completa)
+
+# Numero di archi
+n_archi_vinc_cult <- narcs(dag_vinc_cult)
+cat("Numero di archi nel DAG vincolato con cultivar:", n_archi_vinc_cult, "\n")
+cat("Numero di archi nel DAG libero con cultivar:", n_archi_dag_cult, "\n")
+
+# Conversione in igraph
+dag_vinc_cult_igraph <- as.igraph(dag_vinc_cult)
+```
+
+Il vincolo imposto riorganizza sostanzialmente la struttura del grafo per rispettare la gerarchia causale Cult → Chimica → Alch.
+
+Visualizziamo il DAG vincolato:
+
+```{r dag-vincolato-cult-plot, fig.width=6.5, fig.height=4.5, out.width="88%", out.height="4in", message=FALSE, warning=FALSE, echo=TRUE}
+# Identificazione genitori di Alch
+genitori_alch_vinc <- parents(dag_vinc_cult, "Alch")
+
+# Colorazione dei nodi
+colori_nodi_vinc_cult <- ifelse(V(dag_vinc_cult_igraph)$name == "Alch", "#E46726",
+                          ifelse(V(dag_vinc_cult_igraph)$name %in% c("Cult_v2", "Cult_v3"), "#9370DB",
+                          ifelse(V(dag_vinc_cult_igraph)$name %in% genitori_alch_vinc, 
+                                 "#FFD700", "#6D9EC1")))
+
+# Layout gerarchico
+set.seed(678)
+layout_vinc_cult <- layout_with_sugiyama(dag_vinc_cult_igraph)$layout
+
+# Sposta Alch più a destra per migliorare la visibilità
+alch_idx <- which(V(dag_vinc_cult_igraph)$name == "Alch")
+if(length(alch_idx) > 0) {
+  layout_vinc_cult[alch_idx, 1] <- layout_vinc_cult[alch_idx, 1] + 2.5
+}
+
+# Margini ridotti
+par(mar = c(1, 1, 0.5, 1))
+
+# Plot
+plot(dag_vinc_cult_igraph,
+     layout = layout_vinc_cult,
+     vertex.size = 8,
+     vertex.color = colori_nodi_vinc_cult,
+     vertex.frame.color = "gray30",
+     vertex.label.cex = 0.7,
+     vertex.label.color = "black",
+     vertex.label.font = 2,
+     edge.color = "gray50",
+     edge.width = 1.5,
+     edge.arrow.size = 0.5,
+     edge.curved = 0.1,
+     main = "")
+
+# Legenda
+legend("bottomright",
+       legend = c("Alch (target)", "Cult_v2/v3 (esogene)", 
+                  "Predittori diretti di Alch", "Altre variabili"),
+       fill = c("#E46726", "#9370DB", "#FFD700", "#6D9EC1"),
+       cex = 0.6,
+       bty = "n")
+```
+
+\begingroup
+\captionof{figure}{DAG vincolato: Cult esogena, Alch target}
+\endgroup
+
+Analizziamo i predittori diretti di Alch nel modello vincolato:
+
+```{r dag-vincolato-cult-analisi, message=FALSE, warning=FALSE}
+cat("Predittori diretti di Alch:", 
+    if(length(genitori_alch_vinc) > 0) 
+      paste(genitori_alch_vinc, collapse = ", ") else "Nessuno", "\n")
+
+# Verifica se Cult_v2 o Cult_v3 sono predittori diretti di Alch
+cult_vars_in_parents <- c("Cult_v2", "Cult_v3")[c("Cult_v2", "Cult_v3") %in% genitori_alch_vinc]
+if(length(cult_vars_in_parents) > 0) {
+  cat("Effetto diretto del cultivar su Alch:", paste(cult_vars_in_parents, collapse = ", "), "\n")
+} else {
+  cat("Effetto del cultivar su Alch: solo indiretto (mediato da variabili chimiche)\n")
+}
+```
+
+**Risultato cruciale**: Il DAG vincolato identifica **Cult_v2 e Cult_v3 come genitori diretti di Alch**, insieme a Clri. Questo è un risultato di grande rilevanza enologica: il tipo di coltivazione ha un **effetto causale diretto** sul contenuto alcolico che non è completamente mediato dalle 13 variabili chimiche misurate nel dataset.
+
+In altre parole, il cultivar influenza il contenuto alcolico attraverso **due percorsi causali**:
+
+1. **Effetto indiretto**: Cult → variabili chimiche (Clri, Prln, ecc.) → Alch
+2. **Effetto diretto**: Cult → Alch (non mediato dalle variabili misurate)
+
+L'esistenza dell'effetto diretto suggerisce che vi sono **meccanismi biologici o enologici non catturati** dalle 13 variabili chimiche del dataset che collegano il tipo di coltivazione al contenuto alcolico finale. Questi potrebbero includere differenze nei processi di fermentazione, nella composizione microbiologica, o in altre proprietà biochimiche non misurate.
+
+**Confronto tra DAG libero e DAG vincolato con cultivar:**
+
+L'imposizione dei vincoli causali ha riorganizzato sostanzialmente la struttura del grafo:
+
+- **Struttura gerarchica**: Il DAG vincolato rispetta la gerarchia causale Cult → Chimica → Alch, dove le variabili cultivar influenzano le proprietà chimiche e il contenuto alcolico, mai il contrario.
+
+- **Predittori di Alch**: Il DAG vincolato identifica **tre predittori diretti** del contenuto alcolico: Clri (intensità del colore), Cult_v2 e Cult_v3. Questo indica che, condizionatamente alle altre variabili, questi tre fattori hanno l'influenza causale più forte su Alch.
+
+- **Interpretabilità e validità scientifica**: Il DAG vincolato fornisce una rappresentazione causale coerente con la conoscenza enologica, dove il tipo di coltivazione è una caratteristica esogena che determina sia le proprietà chimiche sia direttamente il contenuto alcolico.
+
 ## Sintesi dei Modelli Grafici Diretti
+
+In questo capitolo abbiamo analizzato **quattro modelli DAG** per esplorare le relazioni causali tra le variabili del dataset Wine, con particolare attenzione al contenuto alcolico (Alch).
+
+### Confronto tra Modelli e Principali Scoperte
+
+**Ruolo di Alch nei modelli senza vincoli:**
+
+Nel DAG libero sulla popolazione (5.1.1), l'algoritmo ha identificato Alch come **variabile causale** piuttosto che come effetto, con tre variabili figlie (Clri, Hue, Prln) e nessun genitore. Questa struttura è **contro-intuitiva** dal punto di vista enologico: il contenuto alcolico è tipicamente una conseguenza delle proprietà chimiche dell'uva e del processo di fermentazione, non una loro causa.
+
+**Importanza dei vincoli basati su conoscenza del dominio:**
+
+Imponendo il vincolo che Alch sia una variabile sink (5.1.2), il DAG ha riorganizzato la struttura causale identificando **predittori diretti** del contenuto alcolico. Questo dimostra che l'**integrazione di conoscenza del dominio** è essenziale per ottenere modelli causali scientificamente validi: l'apprendimento puramente data-driven può produrre strutture statisticamente corrette ma causalmente implausibili.
+
+**Effetto del Cultivar:**
+
+L'inclusione del tipo di coltivazione (sezioni 5.2.1 e 5.2.2) ha ottenuto un risultato di grande rilevanza enologica: nel DAG vincolato, **Cult_v2 e Cult_v3 sono predittori diretti di Alch**, insieme a Clri. Questo indica che il cultivar ha un **effetto causale diretto** sul contenuto alcolico che non è completamente mediato dalle 13 variabili chimiche misurate.
+
+L'esistenza di questo effetto diretto suggerisce la presenza di **meccanismi biologici o enologici non catturati** dalle variabili misurate, come differenze nei processi di fermentazione, nella composizione microbiologica, o in altre proprietà biochimiche specifiche del cultivar.
+
+**Struttura gerarchica causale:**
+
+Il DAG vincolato con cultivar (5.2.2) rispetta la gerarchia causale **Cult → Chimica → Alch**, dove:
+
+- Il cultivar (variabile esogena) influenza sia le proprietà chimiche sia direttamente il contenuto alcolico
+- Le variabili chimiche fungono da **mediatori parziali** dell'effetto del cultivar su Alch
+- Alch è il **nodo terminale** (sink) che riceve influenze ma non ne genera
+
+### Collegamento con i Grafi Indiretti (Capitolo 4)
+
+La progressione da grafi indiretti (UG, Capitolo 4) a grafi diretti (DAG, Capitolo 5) riflette un **approfondimento nell'analisi causale**, passando dai semplici pattern di associazione condizionale alle strutture gerarchiche di influenza diretta e indiretta.
+
+**Per i modelli sulla popolazione (senza cultivar):**
+
+- Nel **Capitolo 4** (grafi indiretti), abbiamo identificato le variabili connesse ad Alch tramite archi non orientati, che indicano dipendenze condizionali ma non specificano la direzione della relazione causale.
+
+- Nel **Capitolo 5** (sezione 5.1.2), il DAG vincolato fornisce informazioni più specifiche: identifica non solo quali variabili sono dipendenti da Alch, ma anche la **direzione causale**, specificando quali variabili agiscono come predittori diretti del contenuto alcolico.
+
+- Confrontando i due grafi, alcune variabili connesse ad Alch nel grafo indiretto sono state identificate come **genitori diretti** nel DAG, mentre altre influenzano Alch solo indirettamente, attraverso catene causali mediate da altre variabili.
+
+**Per i modelli con cultivar:**
+
+- Nel **Capitolo 4** (sezione 4.5), il grafo indiretto con cultivar ha identificato connessioni dirette tra Cult_v2/Cult_v3 e Alch, suggerendo un'associazione condizionale tra tipo di coltivazione e contenuto alcolico.
+
+- Nel **Capitolo 5** (sezione 5.2.2), il DAG vincolato **conferma e rafforza questa scoperta** fornendo un'interpretazione causale: le connessioni Cult-Alch osservate nel grafo indiretto riflettono **vere relazioni causali dirette**, non semplicemente associazioni spurie o mediate da altre variabili.
+
+- Il DAG specifica inoltre la **direzione della causalità**: sono le caratteristiche del cultivar a influenzare il contenuto alcolico, e non viceversa (cosa ovvia dal punto di vista biologico ma importante da un punto di vista statistico).
+
+### Implicazioni per la Modellazione Predittiva (Capitolo 6)
+
+I risultati dei DAG hanno importanti implicazioni per l'analisi di regressione del Capitolo 6:
+
+1. **Necessità di includere il cultivar**: La presenza di un effetto causale diretto del cultivar su Alch indica che per prevedere accuratamente il contenuto alcolico **non è sufficiente conoscere solo le proprietà chimiche** del vino. È necessario includere anche l'informazione sul tipo di coltivazione nel modello di regressione.
+
+2. **Identificazione dei predittori rilevanti**: I DAG vincolati forniscono indicazioni su quali variabili sono più rilevanti come predittori diretti di Alch, guidando la selezione delle variabili nel modello di regressione multipla.
+
+3. **Interpretazione causale vs predittiva**: Mentre i DAG forniscono un'interpretazione **causale** delle relazioni (qual è la direzione dell'influenza), la regressione del Capitolo 6 quantificherà l'**entità dell'associazione** e la capacità predittiva del modello.
+
+4. **Effetti diretti e indiretti**: La distinzione tra predittori diretti e indiretti identificata nei DAG aiuterà a interpretare i coefficienti di regressione, distinguendo effetti diretti da quelli mediati da altre variabili.
 
 \newpage
 
