@@ -37,6 +37,7 @@ library(corrplot)
 library(knitr)
 library(tidyr)
 library(pheatmap)
+library(bnlearn)  # Per l'apprendimento di strutture DAG da dati continui
 ```
 
 \newpage
@@ -202,6 +203,9 @@ Per la prima fase dell'analisi, creiamo un dataset che **esclude la variabile Cu
 ```{r dataset-senza-cultivar, message=FALSE, warning=FALSE}
 # Creazione dataset senza la variabile Cult
 wine_no_cult <- wine[, -which(names(wine) == "Cult")]
+
+# Conversione di tutte le colonne a numeric (necessario per bnlearn)
+wine_no_cult <- as.data.frame(lapply(wine_no_cult, as.numeric))
 
 # Verifica della struttura
 dim(wine_no_cult)
@@ -733,7 +737,7 @@ Il modello selezionato nella sezione precedente definisce un **grafo indiretto**
 ug_plot <- mod_selezionato$modelinfo$ug
 
 # Calcolo del grado di ciascun nodo per dimensionamento
-gradi <- degree(ug_plot)
+gradi <- igraph::degree(ug_plot)
 
 # Identificazione dei vicini di Alch per la colorazione
 vicini_alch <- names(neighbors(ug_plot, "Alch"))
@@ -858,7 +862,7 @@ cat("Archi Alch (", length(archi_alch_cult), "):",
 ug_plot_cult <- mod_sel_cult$modelinfo$ug
 
 # Calcolo del grado di ciascun nodo
-gradi_cult <- degree(ug_plot_cult)
+gradi_cult <- igraph::degree(ug_plot_cult)
 
 # Identificazione dei vicini di Alch e delle variabili dummy cultivar
 vicini_alch_cult <- names(neighbors(ug_plot_cult, "Alch"))
@@ -981,11 +985,191 @@ L'analisi dei modelli grafici indiretti ha rivelato la struttura di dipendenze c
 
 # Modelli Grafici Diretti (DAG)
 
+Nel Capitolo 4 abbiamo utilizzato grafi indiretti (UG) per identificare le **dipendenze condizionali** tra le variabili chimiche del vino. I grafi indiretti, tuttavia, non forniscono informazioni sulla **direzione** delle relazioni: un arco tra due variabili indica una dipendenza, ma non specifica quale variabile influenza l'altra.
+
+In questo capitolo utilizziamo i **grafi aciclici diretti** (Directed Acyclic Graphs, DAG) per orientare gli archi e identificare **relazioni causali** tra le variabili. I DAG permettono di rappresentare una struttura di dipendenza più ricca, in cui ogni arco orientato $X \to Y$ suggerisce che $X$ ha un'influenza diretta su $Y$, condizionatamente alle altre variabili del grafo. La proprietà di aciclicità garantisce l'assenza di loop causali, rendendo il modello interpretabile in termini di relazioni gerarchiche.
+
+La strategia di analisi rispecchia quella del capitolo precedente:
+
+1. **DAG per l'intera popolazione** (senza cultivar): esploriamo prima un DAG libero, poi un DAG vincolato con **Alch come variabile target** (sink), per identificare i predittori diretti del contenuto alcolico.
+
+2. **DAG con cultivar**: includiamo le variabili dummy Cult_v2 e Cult_v3 e valutiamo come il tipo di coltivazione modifichi la struttura causale. Analizziamo un DAG libero e poi un DAG con **Cult come variabile esogena** (source) e **Alch come target** (sink).
+
+I DAG vengono stimati mediante **modelli di regressione gaussiana** per grafi diretti, utilizzando criteri di informazione (AIC o BIC) per la selezione del modello. A differenza dei grafi indiretti, i DAG richiedono l'orientamento degli archi, che può essere guidato da conoscenze a priori (variabili esogene/endogene) o da procedure di ricerca automatica.
+
 ## DAG - Intera Popolazione
 
 ### DAG Libero
 
+Costruiamo un DAG senza vincoli di orientamento utilizzando una **procedura di selezione stepwise** guidata dal criterio BIC. Partiamo dal modello vuoto (nessun arco) e aggiungiamo iterativamente archi orientati che migliorano significativamente il fit del modello.
+
+```{r dag-libero-popolazione, message=FALSE, warning=FALSE, cache=TRUE}
+# Apprendimento di struttura DAG da dati continui usando algoritmo Hill-Climbing
+# con score BIC (Bayesian Information Criterion)
+dag_libero <- hc(wine_no_cult, score = "bic-g")
+
+# Numero di archi selezionati
+n_archi_dag <- narcs(dag_libero)
+cat("Numero di archi nel DAG libero:", n_archi_dag, "\n")
+
+# Conversione in oggetto igraph per la visualizzazione
+dag_igraph <- as.igraph(dag_libero)
+```
+
+Il DAG libero selezionato contiene un sottoinsieme di archi orientati che rappresentano dipendenze causali dirette. Visualizziamo il grafo:
+
+```{r dag-libero-plot, fig.width=6.5, fig.height=4.5, out.width="88%", out.height="4in", message=FALSE, warning=FALSE, echo=TRUE}
+# Identificazione dei genitori (cause dirette) e figli (effetti diretti) di Alch
+genitori_alch <- parents(dag_libero, "Alch")
+figli_alch <- children(dag_libero, "Alch")
+
+# Colorazione dei nodi
+colori_nodi_dag <- ifelse(V(dag_igraph)$name == "Alch", "#E46726",
+                    ifelse(V(dag_igraph)$name %in% genitori_alch, "#FFD700",
+                    ifelse(V(dag_igraph)$name %in% figli_alch, "#90EE90", "#6D9EC1")))
+
+# Layout gerarchico (sugiyama layout per DAG)
+set.seed(456)
+layout_dag <- layout_with_sugiyama(dag_igraph)$layout
+
+# Margini ridotti
+par(mar = c(1, 1, 0.5, 1))
+
+# Plot del DAG
+plot(dag_igraph,
+     layout = layout_dag,
+     vertex.size = 8,
+     vertex.color = colori_nodi_dag,
+     vertex.frame.color = "gray30",
+     vertex.label.cex = 0.7,
+     vertex.label.color = "black",
+     vertex.label.font = 2,
+     edge.color = "gray50",
+     edge.width = 1.5,
+     edge.arrow.size = 0.5,
+     edge.curved = 0.1,
+     main = "")
+
+# Legenda
+legend("bottomleft",
+       legend = c("Alch (target)", "Genitori di Alch", "Figli di Alch", "Altre variabili"),
+       fill = c("#E46726", "#FFD700", "#90EE90", "#6D9EC1"),
+       cex = 0.6,
+       bty = "n")
+```
+
+\begingroup
+\captionof{figure}{DAG libero - Intera popolazione}
+\endgroup
+
+Il DAG libero rivela la struttura di dipendenza causale tra le variabili. Analizziamo i genitori e i figli di Alch:
+
+```{r dag-alch-genitori-figli, message=FALSE, warning=FALSE}
+cat("Genitori di Alch (predittori diretti):", 
+    if(length(genitori_alch) > 0) paste(genitori_alch, collapse = ", ") else "Nessuno", "\n")
+cat("Figli di Alch (variabili causate da Alch):", 
+    if(length(figli_alch) > 0) paste(figli_alch, collapse = ", ") else "Nessuno", "\n")
+```
+
+Il DAG libero identifica quali variabili sono **cause dirette** del contenuto alcolico (genitori) e quali sono **effetti diretti** (figli). A differenza del grafo indiretto, il DAG specifica la direzione delle relazioni, fornendo un'interpretazione causale più ricca.
+
+Tuttavia, il risultato ottenuto solleva una questione importante: **Alch non ha genitori ma ha tre figli** (Clri, Hue, Prln). Questo suggerisce che l'algoritmo ha interpretato il contenuto alcolico come una "causa" piuttosto che come un "effetto" delle altre proprietà chimiche. Questa orientazione, sebbene statisticamente ottimale secondo il criterio BIC applicato ai dati osservazionali, è **contro-intuitiva dal punto di vista del dominio enologico**: ci aspetteremmo che variabili come la prolina, i fenoli o l'acidità influenzino il contenuto alcolico durante il processo di fermentazione, non viceversa.
+
+Questo illustra un **limite fondamentale dell'inferenza causale puramente data-driven**: senza vincoli basati sulla conoscenza del dominio, l'algoritmo può orientare gli archi in qualsiasi direzione che massimizzi il fit statistico, producendo strutture causali plausibili dal punto di vista matematico ma non necessariamente interpretabili. Per questo motivo, nella prossima sezione imponiamo vincoli espliciti per garantire che Alch sia modellato come variabile target.
+
 ### DAG con Alch Target
+
+Per imporre questa struttura causale basata sulla conoscenza del dominio, costruiamo un **DAG vincolato** dove Alch può essere solo un **nodo sink** (ricevere archi ma non emetterne). Questo significa che Alch può avere solo genitori (predittori diretti) ma non figli.
+
+```{r dag-target-popolazione, message=FALSE, warning=FALSE, cache=TRUE}
+# Creazione della blacklist: Alch non può essere genitore di nessuna variabile
+altre_vars <- setdiff(names(wine_no_cult), "Alch")
+blacklist_alch <- data.frame(
+  from = rep("Alch", length(altre_vars)),
+  to = altre_vars
+)
+
+# Apprendimento DAG con vincolo: Alch come sink node
+dag_target <- hc(wine_no_cult, score = "bic-g", blacklist = blacklist_alch)
+
+# Numero di archi selezionati
+n_archi_target <- narcs(dag_target)
+cat("Numero di archi nel DAG vincolato:", n_archi_target, "\n")
+cat("Numero di archi nel DAG libero:", n_archi_dag, "\n")
+
+# Conversione in oggetto igraph
+dag_target_igraph <- as.igraph(dag_target)
+```
+Il vincolo imposto modifica la struttura appresa: l'algoritmo deve ora trovare la migliore configurazione di archi compatibile con l'assunzione che Alch sia una variabile risposta. Visualizziamo il DAG vincolato:
+```{r dag-target-plot, fig.width=5.5, fig.height=3.8, out.width="72%", out.height="3.2in", message=FALSE, warning=FALSE, echo=TRUE}
+# Identificazione dei genitori di Alch (ora non può avere figli per costruzione)
+genitori_alch_target <- parents(dag_target, "Alch")
+# Colorazione dei nodi
+colori_nodi_target <- ifelse(V(dag_target_igraph)$name == "Alch", "#E46726",
+                       ifelse(V(dag_target_igraph)$name %in% genitori_alch_target,
+                         "#FFD700", "#6D9EC1"))
+# Layout gerarchico
+set.seed(789)
+layout_target <- layout_with_sugiyama(dag_target_igraph)$layout
+# Margini ridotti
+par(mar = c(1, 1, 0.5, 1))
+# Plot del DAG
+plot(dag_target_igraph,
+     layout = layout_target,
+     vertex.size = 8,
+     vertex.color = colori_nodi_target,
+     vertex.frame.color = "gray30",
+     vertex.label.cex = 0.7,
+     vertex.label.color = "black",
+     vertex.label.font = 2,
+     edge.color = "gray50",
+     edge.width = 1.5,
+     edge.arrow.size = 0.5,
+     edge.curved = 0.1,
+     main = "")
+# Legenda
+legend("bottomright",
+       legend = c("Alch (target)", "Predittori diretti di Alch", "Altre variabili"),
+       fill = c("#E46726", "#FFD700", "#6D9EC1"),
+       cex = 0.6,
+       bty = "n")
+```
+
+\begingroup
+\captionof{figure}{DAG vincolato con Alch come sink - Intera popolazione}
+\endgroup
+
+Analizziamo i predittori diretti di Alch nel modello vincolato:
+
+```{r dag-target-genitori, message=FALSE, warning=FALSE}
+cat("Predittori diretti di Alch:", 
+    if(length(genitori_alch_target) > 0) 
+      paste(genitori_alch_target, collapse = ", ") else "Nessuno", "\n")
+```
+
+Il DAG vincolato identifica le variabili che hanno un **effetto causale diretto** sul contenuto alcolico, secondo la struttura ottimale compatibile con il vincolo imposto. Queste variabili rappresentano i candidati naturali per un modello di regressione che mira a predire il contenuto alcolico.
+
+**Confronto tra DAG libero e DAG vincolato:**
+
+Imporre il vincolo che Alch sia un nodo sink ha modificato sostanzialmente la struttura del grafo:
+
+- **Numero di archi**: Il DAG vincolato contiene un numero diverso di archi rispetto al DAG libero, riflettendo la riorganizzazione della struttura causale per rispettare il vincolo imposto.
+
+- **Predittori di Alch**: Nel DAG libero, Alch non aveva genitori (predittori diretti), mentre nel DAG vincolato l'algoritmo ha identificato un insieme specifico di variabili come cause dirette del contenuto alcolico. Questi predittori rappresentano le variabili chimiche che, condizionatamente alle altre, hanno l'influenza più forte su Alch.
+
+- **Interpretabilità**: Il DAG vincolato fornisce una struttura causale **più interpretabile e coerente** con la conoscenza enologica, dove il contenuto alcolico è chiaramente una variabile risposta influenzata da proprietà chimiche misurabili, piuttosto che una causa di esse.
+
+Questa analisi dimostra l'importanza di **integrare conoscenza del dominio** nell'inferenza causale: i vincoli espliciti guidano l'algoritmo verso strutture causali più plausibili e utili per l'interpretazione scientifica e la modellazione predittiva.
+
+**Collegamento con i Grafi Indiretti (Capitolo 4):**
+
+Prima di procedere con l'analisi che include il cultivar, è utile confrontare i risultati tra grafi indiretti (UG) e grafi diretti (DAG):
+
+- Nel **Capitolo 4** (grafi indiretti), abbiamo identificato le variabili connesse ad Alch tramite archi non orientati, che indicano dipendenze condizionali ma non specificano la direzione della relazione causale.
+
+- In questo capitolo, il **DAG vincolato** fornisce informazioni più specifiche: identifica non solo quali variabili sono dipendenti da Alch, ma anche la **direzione causale**, specificando quali variabili agiscono come predittori diretti del contenuto alcolico.
+
+- Confrontando i due grafi, possiamo osservare che alcune variabili connesse ad Alch nel grafo indiretto sono state identificate come **genitori diretti** nel DAG, mentre altre potrebbero influenzare Alch solo indirettamente, attraverso catene causali mediate da altre variabili.
 
 ## DAG - Con Cultivar
 
