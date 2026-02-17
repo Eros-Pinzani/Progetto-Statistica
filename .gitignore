@@ -13,7 +13,7 @@
 .Rproj.user/
 
 # Output files (generated from .Rmd)
-*.pdf
+# *.pdf  # Allow PDF output to be committed
 *.html
 *.tex
 *.log
