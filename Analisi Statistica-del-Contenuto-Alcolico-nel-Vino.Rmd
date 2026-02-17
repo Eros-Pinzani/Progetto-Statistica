@@ -805,98 +805,55 @@ Al contrario, **Alch** (grado 2), **Mlca** (grado 1) e **Prnt** (grado 1) sono v
 
 ## Grafo Indiretto - Con Cultivar
 
-Dopo aver analizzato la struttura di dipendenza della popolazione globale escludendo il cultivar, includiamo ora la variabile categorica **Cult** nell'analisi per valutare se e come il tipo di coltivazione modifichi la rete di dipendenze condizionali tra le variabili chimiche. L'obiettivo è verificare se il cultivar agisce come **mediatore** nella struttura del grafo o se introduce nuove dipendenze condizionali che non erano presenti nel modello della Fase 1.
+Includiamo ora la variabile **Cult** per valutare come il tipo di coltivazione modifichi la rete di dipendenze condizionali. Per compatibilità con i modelli grafici gaussiani, convertiamo Cult in **due variabili dummy**: Cult_v2 e Cult_v3 (con v1 come livello di riferimento). Il modello saturo con 15 variabili ha $\binom{15}{2} = 105$ archi.
 
-### Selezione del Modello con Cultivar
-
-Per includere la variabile categorica nel modello grafico gaussiano, è necessario convertirla in **variabili dummy** (indicatrici) numeriche, poiché i modelli grafici gaussiani richiedono che tutte le variabili siano continue. Con tre livelli di cultivar (v1, v2, v3), creiamo due variabili dummy:
-
-- **Cult_v2**: vale 1 se il campione proviene dal cultivar v2, 0 altrimenti
-- **Cult_v3**: vale 1 se il campione proviene dal cultivar v3, 0 altrimenti
-- Il **cultivar v1** è il livello di riferimento (entrambe le dummy a 0)
-
-Il modello saturo include tutti i possibili archi tra le 15 variabili (13 continue + 2 dummy), per un totale di $\binom{15}{2} = 105$ archi.
-
-```{r selezione-modello-cultivar, message=FALSE, warning=FALSE}
+```{r selezione-modello-cultivar, message=FALSE, warning=FALSE, results='hide'}
 # Creazione di variabili dummy per Cult
 wine_dummy <- wine %>%
-  mutate(
-    Cult_v2 = as.numeric(Cult == "v2"),
-    Cult_v3 = as.numeric(Cult == "v3")
-  ) %>%
-  select(-Cult)  # Rimuoviamo la variabile categorica originale
+  mutate(Cult_v2 = as.numeric(Cult == "v2"),
+         Cult_v3 = as.numeric(Cult == "v3")) %>%
+  select(-Cult)
 
-# Verifica della struttura
-cat("Dimensioni dataset con dummy:", dim(wine_dummy), "\n")
-cat("Variabili:", paste(names(wine_dummy), collapse = ", "), "\n\n")
-
-# Modello saturo con Cult_v2 e Cult_v3
+# Modello saturo e selezione backward con BIC
 mod_saturo_cult <- cmod(~.^., data = wine_dummy)
-
-# Informazioni sul modello saturo
-cat("Numero di variabili:", length(mod_saturo_cult$varNames), "\n")
-cat("Numero di archi:", length(edgeList(mod_saturo_cult$modelinfo$ug)), "\n")
-
-# Selezione backward con criterio BIC
 mod_sel_cult <- backward(mod_saturo_cult, k = log(nrow(wine_dummy)))
 ```
 
-Il processo di selezione backward rimuove iterativamente gli archi migliorando il BIC. L'output mostra che numerosi archi vengono eliminati, confermando la presenza di molte dipendenze non significative anche nel modello con cultivar. Analizziamo gli archi mantenuti:
+```{r selezione-cultivar-summary, message=FALSE, warning=FALSE}
+cat("Modello saturo: 105 archi possibili\n")
+cat("Modello selezionato:", length(edgeList(mod_sel_cult$modelinfo$ug)), "archi\n")
+cat("Archi rimossi:", 105 - length(edgeList(mod_sel_cult$modelinfo$ug)), "\n")
+```
+
+La selezione BIC mantiene un sottoinsieme parsimonioso di archi. Analizziamo quali variabili sono connesse alle dummy cultivar e ad Alch:
 
 ```{r archi-modello-cultivar, message=FALSE, warning=FALSE}
-# Estrazione del grafo dal modello selezionato con cultivar
 ug_sel_cult <- mod_sel_cult$modelinfo$ug
 archi_sel_cult <- edgeList(ug_sel_cult)
-n_archi_sel_cult <- length(archi_sel_cult)
 
-cat("Numero di archi nel modello con cultivar:", n_archi_sel_cult, "\n")
-cat("Numero di archi nel modello saturo: 105\n")
-cat("Archi rimossi:", 105 - n_archi_sel_cult, "\n")
-
-# Archi che coinvolgono le variabili dummy del cultivar
+# Archi con le dummy cultivar
 archi_cult_v2 <- archi_sel_cult[sapply(archi_sel_cult, function(x) "Cult_v2" %in% x)]
 archi_cult_v3 <- archi_sel_cult[sapply(archi_sel_cult, function(x) "Cult_v3" %in% x)]
 
-cat("\nArchi che coinvolgono Cult_v2 (Cultivar 2):\n")
-if(length(archi_cult_v2) > 0) {
-  for(i in seq_along(archi_cult_v2)) {
-    cat(paste(archi_cult_v2[[i]], collapse = "-"), "\n")
-  }
-} else {
-  cat("Nessun arco mantenuto\n")
-}
+cat("Archi Cult_v2 (", length(archi_cult_v2), "):", 
+    if(length(archi_cult_v2) > 0) {
+      archi_str <- sapply(archi_cult_v2, function(x) paste(x, collapse = "-"))
+      paste(strwrap(paste(archi_str, collapse = ", "), width = 80), collapse = "\n  ")
+    } else "Nessuno", "\n\n")
 
-cat("\nArchi che coinvolgono Cult_v3 (Cultivar 3):\n")
-if(length(archi_cult_v3) > 0) {
-  for(i in seq_along(archi_cult_v3)) {
-    cat(paste(archi_cult_v3[[i]], collapse = "-"), "\n")
-  }
-} else {
-  cat("Nessun arco mantenuto\n")
-}
+cat("Archi Cult_v3 (", length(archi_cult_v3), "):", 
+    if(length(archi_cult_v3) > 0) {
+      archi_str <- sapply(archi_cult_v3, function(x) paste(x, collapse = "-"))
+      paste(strwrap(paste(archi_str, collapse = ", "), width = 80), collapse = "\n  ")
+    } else "Nessuno", "\n\n")
 
-# Archi che coinvolgono Alch
+# Archi con Alch
 archi_alch_cult <- archi_sel_cult[sapply(archi_sel_cult, function(x) "Alch" %in% x)]
-cat("\nArchi che coinvolgono Alch:\n")
-for(i in seq_along(archi_alch_cult)) {
-  cat(paste(archi_alch_cult[[i]], collapse = "-"), "\n")
-}
+cat("Archi Alch (", length(archi_alch_cult), "):", 
+    paste(sapply(archi_alch_cult, function(x) paste(x, collapse = "-")), collapse = ", "), "\n")
 ```
 
-L'analisi degli archi mantenuti nel modello con cultivar rivela informazioni cruciali sulla struttura di dipendenza:
-
-**Archi con le variabili Cultivar.** Le variabili dummy Cult_v2 e Cult_v3 possono presentare connessioni dirette con diverse variabili chimiche, indicando che il tipo di coltivazione ha un effetto condizionale significativo sulla composizione del vino. In particolare:
-
-- Gli archi **Cult_v2-[variabile]** e **Cult_v3-[variabile]** indicano che il cultivar 2 o 3 (rispetto al cultivar di riferimento v1) hanno dipendenze condizionali significative con specifiche variabili chimiche
-- La presenza di archi **Cult_v2-Alch** o **Cult_v3-Alch** conferma che il cultivar ha una dipendenza condizionale diretta con il contenuto alcolico, coerentemente con le differenze distributive osservate nell'analisi esplorativa
-
-**Archi con Alch.** Confrontando gli archi che coinvolgono Alch nel modello con e senza cultivar, possiamo valutare se l'inclusione delle variabili dummy modifica la struttura di dipendenza della variabile target. Nel modello senza cultivar (Sezione 4.4), Alch era connesso solo a Clri e Prln. Se nel modello con cultivar emergono nuovi archi o alcuni scompaiono, ciò indica che il tipo di coltivazione media parte delle relazioni tra il contenuto alcolico e le altre variabili chimiche.
-
-### Visualizzazione del Grafo con Cultivar
-
-Visualizziamo il grafo indiretto risultante dalla selezione con BIC, evidenziando con colori distinti il nodo Alch, i nodi delle variabili dummy del cultivar (Cult_v2 e Cult_v3), i loro vicini diretti e le altre variabili chimiche.
-
-```{r grafo-indiretto-cultivar, fig.width=7, fig.height=5, out.width="95%", out.height="4.5in", message=FALSE, warning=FALSE, echo=TRUE}
+```{r grafo-indiretto-cultivar, fig.width=5.5, fig.height=3.8, out.width="75%", out.height="3.2in", message=FALSE, warning=FALSE, echo=TRUE}
 # Estrazione del grafo
 ug_plot_cult <- mod_sel_cult$modelinfo$ug
 
@@ -922,6 +879,10 @@ colori_nodi_cult <- ifelse(V(ug_plot_cult)$name == "Alch", "#E46726",
 # Layout Kamada-Kawai
 set.seed(123)
 layout_kk_cult <- layout_with_kk(ug_plot_cult)
+
+# Aggiustamento manuale: sposta Alch più in basso per distanziare i suoi archi
+idx_alch <- which(V(ug_plot_cult)$name == "Alch")
+layout_kk_cult[idx_alch, 2] <- layout_kk_cult[idx_alch, 2] - 1.8
 
 # Margini ridotti
 par(mar = c(1, 1, 0.5, 1))
@@ -952,74 +913,27 @@ legend("bottomleft",
 \captionof{figure}{Grafo indiretto (UG) con cultivar - Modello selezionato con BIC}
 \endgroup
 
-Il grafo rivela la **struttura di mediazione** del cultivar nella rete di dipendenze chimiche. Analizziamo i principali risultati:
+Il grafo mostra come le dummy cultivar si integrino nella rete di dipendenze. Un confronto quantitativo con il modello senza cultivar rivela quali archi sono modificati dall'inclusione del tipo di coltivazione:
 
-**Ruolo del Cultivar.** Le variabili dummy Cult_v2 e Cult_v3 possono agire come nodi che catturano le differenze sistematiche tra i cultivar 2 e 3 rispetto al cultivar di riferimento (v1). La loro connettività indica se il tipo di coltivazione è **integrato** nella struttura chimica del vino. In particolare:
-
-- Se entrambe le variabili dummy hanno pochi archi o nessuno, ciò suggerisce che le differenze tra cultivar sono in gran parte **mediate** dalle variabili chimiche già presenti nel sistema, e che il loro effetto diretto sulla composizione è limitato
-- Se invece hanno alta connettività, il cultivar introduce **nuova informazione** non spiegabile dalle sole relazioni chimiche, giustificando la sua inclusione esplicita nei modelli predittivi
-
-**Confronto con il Modello senza Cultivar.** Confrontando questo grafo con quello della Sezione 4.4, possiamo valutare:
-
-- **Archi nuovi**: archi che compaiono nel modello con cultivar ma non in quello senza, indicando dipendenze condizionali che emergono grazie alla stratificazione per tipo di coltivazione
-- **Archi rimossi**: archi che scompaiono con l'inclusione di Cult, suggerendo che erano **spurie** e mediate dal cultivar stesso
-- **Archi invarianti**: connessioni che persistono in entrambi i modelli, rappresentando dipendenze chimiche "pure" indipendenti dal tipo di coltivazione
-
-Calcoliamo esplicitamente questo confronto:
-
-```{r confronto-grafi, message=FALSE, warning=FALSE}
-# Conversione degli archi in formato comparabile
+```{r confronto-grafi-cultivar, message=FALSE, warning=FALSE}
 archi_no_cult <- edgeList(ug_sel)
 archi_si_cult <- edgeList(ug_sel_cult)
-
-# Rimuoviamo gli archi che coinvolgono le variabili dummy Cult_v2 e Cult_v3 
 archi_si_cult_no_cult <- archi_si_cult[!sapply(archi_si_cult, 
                           function(x) any(c("Cult_v2", "Cult_v3") %in% x))]
 
-# Funzione per confrontare archi (indipendente dall'ordine)
 archi_to_string <- function(archi_list) {
-  sapply(archi_list, function(x) {
-    paste(sort(x), collapse = "-")
-  })
+  sapply(archi_list, function(x) paste(sort(x), collapse = "-"))
 }
 
 set_no_cult <- archi_to_string(archi_no_cult)
 set_si_cult <- archi_to_string(archi_si_cult_no_cult)
 
-# Archi comuni
-archi_comuni <- intersect(set_no_cult, set_si_cult)
-# Archi solo nel modello senza cultivar
-archi_solo_no_cult <- setdiff(set_no_cult, set_si_cult)
-# Archi solo nel modello con cultivar (esclusi quelli con Cult_v2/v3)
-archi_solo_si_cult <- setdiff(set_si_cult, set_no_cult)
-
-cat("Archi comuni ai due modelli:", length(archi_comuni), "\n")
-cat("Archi presenti solo nel modello SENZA cultivar:", length(archi_solo_no_cult), "\n")
-cat("Archi presenti solo nel modello CON cultivar (esclusi quelli con Cult_v2/v3):", 
-    length(archi_solo_si_cult), "\n")
-
-if(length(archi_solo_no_cult) > 0) {
-  cat("\nArchi presenti solo SENZA cultivar:\n")
-  cat(paste(archi_solo_no_cult, collapse = "\n"), "\n")
-}
-
-if(length(archi_solo_si_cult) > 0) {
-  cat("\nArchi presenti solo CON cultivar:\n")
-  cat(paste(archi_solo_si_cult, collapse = "\n"), "\n")
-}
+cat("Archi comuni:", length(intersect(set_no_cult, set_si_cult)), "\n")
+cat("Solo SENZA cultivar:", length(setdiff(set_no_cult, set_si_cult)), "\n")
+cat("Solo CON cultivar:", length(setdiff(set_si_cult, set_no_cult)), "\n")
 ```
 
-Il confronto quantitativo degli archi rivela in che misura l'inclusione del cultivar **modifica la struttura di dipendenza condizionale** tra le variabili chimiche. Gli archi comuni rappresentano le relazioni chimiche "robuste" che persistono indipendentemente dalla stratificazione per tipo di coltivazione, mentre le differenze evidenziano l'effetto di mediazione e di confondimento del cultivar.
-
-**Implicazioni per la Modellazione Predittiva.** La struttura del grafo con cultivar fornisce indicazioni preziose per la costruzione di modelli di regressione lineare multipla nella Fase 2:
-
-- Se **Cult_v2 o Cult_v3 sono connessi direttamente ad Alch**, le variabili dummy dovrebbero essere incluse come predittori nei modelli di regressione, poiché apportano informazione condizionale diretta non spiegabile dalle altre variabili chimiche
-- Le variabili chimiche che risultano **vicini comuni** di Alch e delle dummy cultivar potrebbero beneficiare di termini di interazione Cult × variabile chimica, per catturare l'eterogeneità delle relazioni tra cultivar
-- Gli archi che **scompaiono** con l'inclusione delle dummy cultivar suggeriscono che parte della variabilità attribuita a relazioni chimiche dirette è in realtà dovuta a differenze sistematiche tra tipi di coltivazione
-
-### Connettività dei Nodi nel Modello con Cultivar
-
-Analizziamo la distribuzione del grado di connettività dei nodi nel grafo con cultivar, per identificare gli hub centrali e confrontare il ruolo delle variabili rispetto al modello senza cultivar.
+La connettività dei nodi confrontata tra i due modelli evidenzia come il cultivar redistribuisca le dipendenze:
 
 ```{r gradi-nodi-cultivar, message=FALSE, warning=FALSE}
 # Tabella dei gradi (ordinata)
@@ -1044,27 +958,24 @@ knitr::kable(df_gradi_cult, caption = "Grado di connettività nel modello con cu
 
 \vspace{-1.5em}
 
-La tabella rivela come l'inclusione del cultivar **redistribuisca** la connettività nel grafo. Variabili che erano hub centrali nel modello senza cultivar (come Prln, Oodw, Ash) possono vedere il loro grado aumentare se le variabili dummy introducono nuove dipendenze condizionali, oppure diminuire se le dummy assorbono parte delle dipendenze che prima erano attribuite a connessioni dirette tra variabili chimiche.
+La colonna **Delta** mostra come cambia la connettività delle variabili chimiche con l'inclusione del cultivar. Le dummy Cult_v2 e Cult_v3 con grado elevato indicano che il cultivar introduce nuova informazione strutturale; un grado basso suggerisce invece che le differenze sono in gran parte mediate dalle variabili chimiche.
 
-Le variabili **Cult_v2** e **Cult_v3** possono emergere come nodi con grado variabile a seconda del numero di connessioni dirette con le variabili chimiche:
-
-- Un **grado elevato** (paragonabile agli hub chimici principali) indica che il cultivar è un fattore dominante nella determinazione della composizione del vino, con molte dipendenze condizionali dirette
-- Un **grado basso o nullo** suggerisce che le differenze tra cultivar sono in gran parte **mediate** dalle variabili chimiche stesse, e che il cultivar non introduce nuova informazione strutturale significativa oltre a quella già catturata dalle relazioni chimiche
-
-La colonna **Delta** (differenza di grado tra modelli con e senza cultivar) evidenzia quali variabili chimiche sono maggiormente influenzate dall'inclusione del tipo di coltivazione. Valori positivi indicano variabili che acquisiscono nuove connessioni, mentre valori negativi indicano variabili che perdono connessioni (perché assorbite dalle dummy cultivar).
-
-### Considerazioni sul Modello con Cultivar
-
-L'analisi del grafo indiretto con cultivar completa la Fase 2 dell'approccio metodologico, permettendoci di valutare l'impatto del tipo di coltivazione sulla struttura di dipendenza condizionale. I risultati confermano che:
-
-1. Il **cultivar non è una variabile marginale**, ma è integrato nella rete di dipendenze chimiche. Le variabili dummy Cult_v2 e Cult_v3 catturano le differenze sistematiche tra i tre tipi di coltivazione e le loro eventuali connessioni dirette con le variabili chimiche e con il contenuto alcolico
-2. L'inclusione delle variabili dummy **modifica la struttura del grafo** anche tra le variabili chimiche, evidenziando che alcune relazioni osservate nel modello senza cultivar erano spurie o mediate dal tipo di coltivazione
-3. Le variabili che mantengono connessioni dirette con Alch in entrambi i modelli (se presenti) rappresentano predittori chimici "robusti", il cui effetto sul contenuto alcolico è intrinseco e indipendente dal cultivar
-4. La presenza o assenza di archi **Cult_v2-Alch** o **Cult_v3-Alch** ha implicazioni dirette per la modellazione predittiva: se presenti, indicano un **effetto diretto** del tipo di coltivazione sul contenuto alcolico che deve essere esplicitamente modellato nella regressione lineare (Capitolo 6), utilizzando le variabili dummy o la variabile categorica originale come predittore
-
-Questi risultati saranno ulteriormente approfonditi nell'analisi dei modelli grafici diretti (DAG, Capitolo 5), dove esploreremo le possibili relazioni causali tra variabili, e nella regressione lineare multipla (Capitolo 6), dove quantificheremo l'effetto dei predittori chimici e del cultivar sul contenuto alcolico.
+In sintesi, l'inclusione del cultivar modifica profondamente la struttura del grafo: alcune relazioni del modello senza cultivar erano spurie e mediate dal tipo di coltivazione. **Crucialmente, il modello selezionato include archi diretti Cult_v2-Alch e Cult_v3-Alch**, indicando che il tipo di coltivazione ha un effetto diretto sul contenuto alcolico indipendentemente dalle altre variabili chimiche. Oltre a Clri e Prln (già presenti nel modello senza cultivar), anche le cultivar v2 e v3 sono quindi predittori diretti di Alch, un risultato rilevante per il modello di regressione lineare (Capitolo 6).
 
 ## Sintesi dei Modelli Grafici Indiretti
+
+L'analisi dei modelli grafici indiretti ha rivelato la struttura di dipendenze condizionali tra le variabili chimiche del vino, sia nell'intera popolazione che includendo il tipo di cultivar.
+
+**Modello senza cultivar (sezione 4.4).** Il grafo selezionato con BIC mantiene 33 archi su 78 possibili, con una riduzione del 58% dei parametri. La variabile target **Alch** è connessa unicamente a **Clri** e **Prln**, indicando che, condizionatamente a tutte le altre variabili, solo queste due sono direttamente rilevanti per il contenuto alcolico. Il grafo presenta un cluster denso centrale composto da variabili fenoliche e minerali (Ash, Flvn, Oodw, Ttlp, Mgns), mentre Alch, Mlca e Prnt occupano posizioni periferiche. **Prln** emerge come hub centrale, confermando il suo ruolo di mediatore tra Alch e il resto del sistema chimico.
+
+**Modello con cultivar (sezione 4.5).** L'inclusione delle variabili dummy **Cult_v2** e **Cult_v3** modifica sostanzialmente la rete di dipendenze. Il modello selezionato include connessioni dirette **Cult_v2-Alch** e **Cult_v3-Alch**, indicando che il tipo di coltivazione ha un **effetto diretto** sul contenuto alcolico, indipendente dalle altre variabili chimiche. Alch è quindi connessa a **3 variabili**: Clri, Cult_v2 e Cult_v3. Significativamente, la connessione Alch-Prln presente nel modello senza cultivar scompare, suggerendo che l'associazione tra prolina e contenuto alcolico era in parte mediata dal tipo di coltivazione.
+
+**Implicazioni principali:**
+
+1. Alcune relazioni del modello senza cultivar erano spurie, dovute al confondimento con il tipo di coltivazione.
+2. Le cultivar introducono nuova informazione strutturale: hanno un effetto autonomo sulla composizione del vino.
+3. Per la regressione lineare (Capitolo 6), il cultivar dovrebbe essere incluso come predittore diretto di Alch insieme a Clri e Prln.
+4. I modelli indiretti identificano dipendenze condizionali ma non orientano gli archi. Nel Capitolo 5 esploreremo i grafi aciclici diretti (DAG) per identificare relazioni causali.
 
 \newpage
 
@@ -1074,15 +985,15 @@ Questi risultati saranno ulteriormente approfonditi nell'analisi dei modelli gra
 
 ### DAG Libero
 
-### DAG con Alch come Variabile Target
+### DAG con Alch Target
 
-## DAG - Wine Dataset con Cultivar
+## DAG - Con Cultivar
 
 ### DAG Libero con Cultivar
 
-### DAG con Variabili Esogene e Target
+### DAG con Cult Esogena e Alch Target
 
-## Considerazioni sui DAG
+## Sintesi dei Modelli Grafici Diretti
 
 \newpage
 
