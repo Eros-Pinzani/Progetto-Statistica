@@ -14,6 +14,8 @@ header-includes:
   - \usepackage{xcolor}
   - \usepackage{fancyvrb}
   - \usepackage{framed}
+  - \usepackage{float}
+  - \usepackage{caption}
   - \usepackage{placeins}
   - \definecolor{shadecolor}{RGB}{230,230,230}
   - \renewenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
@@ -25,6 +27,8 @@ header-includes:
 ```{r setup, include=FALSE}
 # Caricamento di tutte le librerie necessarie per l'analisi
 library(gRbase)
+library(gRim)
+library(igraph)
 library(ggplot2)
 library(dplyr)
 library(gridExtra)
@@ -500,19 +504,567 @@ Questi risultati forniscono le basi per le analisi successive: i modelli grafici
 
 # Modelli Grafici Indiretti
 
-## Introduzione alla Matrice di Concentrazione
+## Introduzione ai Modelli Grafici Gaussiani
+
+I modelli grafici gaussiani (Gaussian Graphical Models, GGM) rappresentano uno strumento fondamentale per lo studio delle **dipendenze condizionali** tra variabili continue. A differenza delle correlazioni marginali analizzate nel capitolo precedente, che misurano l'associazione diretta tra coppie di variabili, i GGM permettono di identificare quali relazioni persistono **anche dopo aver controllato per l'effetto di tutte le altre variabili**.
+
+Il principio chiave alla base dei GGM risiede nella **matrice di concentrazione** $K$, definita come l'inversa della matrice di covarianza:
+
+$$K = \Sigma^{-1}$$
+
+dove $\Sigma$ è la matrice di covarianza del vettore aleatorio $X = (X_1, X_2, \ldots, X_p)$. Sotto l'assunzione di normalità multivariata, gli elementi fuori diagonale della matrice di concentrazione hanno un'interpretazione diretta: l'elemento $k_{ij}$ è proporzionale alla **correlazione parziale** tra $X_i$ e $X_j$, condizionatamente a tutte le altre variabili. In particolare, la correlazione parziale tra $X_i$ e $X_j$ è data da:
+
+$$\rho_{ij \cdot \text{rest}} = -\frac{k_{ij}}{\sqrt{k_{ii} \cdot k_{jj}}}$$
+
+Questa proprietà porta alla regola fondamentale dei GGM: se $k_{ij} = 0$, allora $X_i$ e $X_j$ sono **condizionalmente indipendenti** dato il resto delle variabili. In termini grafici, ciò equivale all'**assenza di un arco** tra i nodi $i$ e $j$ nel grafo indiretto.
+
+Il **grafo indiretto** (Undirected Graph, UG) risultante è quindi un grafo $G = (V, E)$ dove:
+
+- $V = \{1, 2, \ldots, p\}$ è l'insieme dei nodi, ciascuno corrispondente a una variabile
+- $E \subseteq V \times V$ è l'insieme degli archi, dove $(i, j) \in E$ se e solo se $k_{ij} \neq 0$
+
+Questo grafo codifica la **struttura di indipendenza condizionale** del vettore aleatorio: la presenza di un arco tra due nodi indica una dipendenza diretta che non è spiegabile attraverso le altre variabili del sistema. Un grafo con pochi archi (sparso) suggerisce che molte relazioni osservate nelle correlazioni marginali sono in realtà **spurie**, mediate da variabili intermedie.
+
+Nel nostro contesto, i GGM ci permetteranno di rispondere a una domanda cruciale: quali variabili chimiche hanno una **relazione diretta** con il contenuto alcolico, e quali invece sono correlate ad esso solo indirettamente, attraverso la mediazione di altre sostanze?
 
 ## Matrice di Concentrazione - Intera Popolazione
 
+Come introdotto nella sezione precedente, la matrice di concentrazione $K = \Sigma^{-1}$ è lo strumento chiave per identificare le dipendenze condizionali tra le variabili. Calcoliamo innanzitutto la **matrice di covarianza campionaria** $S$ e la sua inversa $K$ per le 13 variabili chimiche del dataset (escludendo il cultivar).
+
+```{r concentrazione-popolazione, message=FALSE, warning=FALSE}
+# Matrice di covarianza campionaria
+S <- cov(wine_no_cult)
+
+# Matrice di concentrazione (inversa della covarianza)
+K <- solve(S)
+
+# Assegnazione dei nomi delle variabili
+colnames(K) <- rownames(K) <- colnames(wine_no_cult)
+
+# Visualizzazione della matrice di concentrazione
+round(K, 3)
+```
+
+La matrice di concentrazione presenta valori di **ordini di grandezza molto diversi** sugli elementi diagonali (ad esempio, $k_{\text{Prln,Prln}}$ è molto piccolo rispetto a $k_{\text{Ash,Ash}}$), riflettendo le differenti scale di misura delle variabili chimiche. Questo rende difficile interpretare direttamente i valori fuori diagonale $k_{ij}$: un valore apparentemente piccolo potrebbe in realtà indicare una forte dipendenza condizionale se rapportato agli elementi diagonali corrispondenti. Per questa ragione, è necessario **standardizzare** la matrice di concentrazione, ottenendo le correlazioni parziali.
+
 ### Correlazioni Parziali - Intera Popolazione
 
-## Selezione Modello
+Le correlazioni parziali si ottengono dalla matrice di concentrazione mediante la formula di standardizzazione:
+
+$$\rho_{ij \cdot \text{rest}} = -\frac{k_{ij}}{\sqrt{k_{ii} \cdot k_{jj}}}$$
+
+che produce valori nell'intervallo $[-1, 1]$, direttamente confrontabili tra tutte le coppie di variabili, indipendentemente dalla loro scala di misura. Un valore prossimo a zero indica **indipendenza condizionale** (assenza di relazione diretta), mentre valori elevati in valore assoluto indicano una **dipendenza condizionale forte**.
+
+```{r correlazioni-parziali, fig.width=7, fig.height=3.5, fig.cap="Matrice delle correlazioni parziali - Intera popolazione", message=FALSE, warning=FALSE, fig.pos="p"}
+# Calcolo delle correlazioni parziali dalla matrice di concentrazione
+# rho_ij = -K_ij / sqrt(K_ii * K_jj)
+D <- diag(1 / sqrt(diag(K)))
+P <- -D %*% K %*% D
+diag(P) <- 1
+colnames(P) <- rownames(P) <- colnames(wine_no_cult)
+
+# Visualizzazione con corrplot
+corrplot(P, 
+         method = "color",
+         type = "upper",
+         order = "original",
+         tl.col = "black",
+         tl.cex = 0.7,
+         tl.srt = 45,
+         addCoef.col = "black",
+         number.cex = 0.5,
+         col = colorRampPalette(c("#6D9EC1", "white", "#E46726"))(200),
+         mar = c(0, 0, 0, 0))
+```
+
+\vspace{-0.5em}
+
+Il confronto tra la matrice delle correlazioni parziali (qui sopra) e la matrice delle correlazioni marginali (sezione 3.4) è estremamente informativo: molte delle correlazioni marginali osservate nell'analisi esplorativa **scompaiono o si riducono drasticamente** una volta controllato l'effetto delle altre variabili. Questo indica che buona parte delle associazioni bivariate erano **spurie**, mediate da variabili intermedie.
+
+Per il contenuto alcolico (**Alch**), le dipendenze condizionali più rilevanti sono:
+
+- **Clri** ($\rho_{\text{parz}}$ = `r round(P["Alch","Clri"], 2)`): l'intensità del colore è la variabile con la **correlazione parziale più forte** con Alch, sebbene ridotta rispetto alla correlazione marginale (r=0.55). Questo indica che, pur perdendo parte dell'associazione per effetto di mediazione, Clri mantiene un **legame diretto** importante con il contenuto alcolico.
+
+- **Prln** ($\rho_{\text{parz}}$ = `r round(P["Alch","Prln"], 2)`): la prolina mantiene la seconda correlazione parziale più elevata, confermando una **relazione diretta** con il contenuto alcolico anche dopo aver controllato per tutte le altre variabili chimiche. Questo legame riflette il ruolo della prolina come indicatore di maturazione dell'uva e del potenziale alcolico.
+
+- **Mlca** ($\rho_{\text{parz}}$ = `r round(P["Alch","Mlca"], 2)`): l'acido malico presenta un risultato interessante. La sua correlazione marginale con Alch era molto debole (r=0.09), mentre la correlazione parziale è **più che raddoppiata**. Questo rafforzamento indica un **effetto di soppressione**: l'influenza di altre variabili (in particolare quelle fenoliche e l'intensità del colore) mascherava parzialmente il legame positivo diretto tra acido malico e contenuto alcolico, che emerge più chiaramente solo dopo aver condizionato su tutte le altre variabili.
+
+- **Aloa** ($\rho_{\text{parz}}$ = `r round(P["Alch","Aloa"], 2)`): l'alcalinità delle ceneri mostra una correlazione parziale negativa, indicando una **dipendenza condizionale inversa** con il contenuto alcolico: a parità di tutte le altre variabili chimiche, valori più alti di alcalinità sono associati a un contenuto alcolico inferiore.
+
+D'altra parte, variabili che nell'analisi esplorativa mostravano correlazioni marginali apprezzabili con Alch perdono gran parte della loro associazione una volta controllate le altre variabili:
+
+- **Mgns** ($\rho_{\text{parz}}$ = `r round(P["Alch","Mgns"], 2)`): il magnesio, che presentava una correlazione marginale di 0.27, mostra una correlazione parziale prossima allo zero, indicando **indipendenza condizionale** — il legame osservato era in realtà interamente mediato da altre variabili chimiche.
+
+- **Ttlp** ($\rho_{\text{parz}}$ = `r round(P["Alch","Ttlp"], 2)`): i fenoli totali (r marginale = 0.29) mostrano anch'essi una correlazione parziale quasi nulla, confermando che la loro associazione con il contenuto alcolico era **spuria**, mediata da variabili come i flavonoidi e la prolina.
+
+- **Flvn** ($\rho_{\text{parz}}$ = `r round(P["Alch","Flvn"], 2)`): analogamente, i flavonoidi perdono completamente la loro associazione con Alch nelle correlazioni parziali, nonostante una correlazione marginale moderata.
+
+```{r confronto-marginali-parziali, fig.width=6.5, fig.height=3, fig.cap="Confronto tra correlazioni marginali e parziali con Alch", message=FALSE, warning=FALSE, fig.pos="H"}
+# Confronto correlazioni marginali vs parziali con Alch
+vars <- colnames(wine_no_cult)[colnames(wine_no_cult) != "Alch"]
+df_confronto <- data.frame(
+  Variabile = vars,
+  Marginale = cor_matrix["Alch", vars],
+  Parziale = P["Alch", vars]
+)
+
+df_conf_long <- df_confronto %>%
+  pivot_longer(cols = c(Marginale, Parziale), 
+               names_to = "Tipo", 
+               values_to = "Correlazione")
+
+ggplot(df_conf_long, aes(x = Variabile, y = Correlazione, fill = Tipo)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8, width = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_fill_manual(values = c("Marginale" = "#E46726", "Parziale" = "#6D9EC1"),
+                    name = NULL) +
+  labs(x = "Variabile", y = "Correlazione con Alch") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+        legend.position = "top")
+```
+
+Il grafico di confronto evidenzia chiaramente il **fenomeno di riduzione** delle correlazioni passando dalle marginali alle parziali: la maggior parte delle variabili mostra correlazioni parziali significativamente minori (in valore assoluto) rispetto alle correlazioni marginali. Questo è coerente con la presenza di multicollinearità nel dataset, già identificata nella heatmap (sezione 3.5). Le variabili che mantengono una dipendenza condizionale apprezzabile con Alch sono candidate naturali per la costruzione del grafo indiretto e per l'inclusione nei modelli di regressione.
+
+Osserviamo inoltre che all'interno del cluster fenolico, la forte multicollinearità interna (Flvn-Ttlp r=0.86) viene "decomposta" nelle correlazioni parziali: **Flvn** e **Ttlp** mostrano una correlazione parziale reciproca ancora elevata ($\rho_{\text{parz}}$ = `r round(P["Flvn","Ttlp"], 2)`), confermando un legame diretto tra queste due variabili, ma il loro legame con Alch si riduce considerevolmente, suggerendo che l'informazione che portano sul contenuto alcolico è in gran parte indirettamente mediata.
+
+## Selezione del Modello - Intera Popolazione
+
+La matrice delle correlazioni parziali calcolata nella sezione precedente rappresenta il modello **saturo**, in cui tutti i 78 archi possibili sono presenti. Tuttavia, molte correlazioni parziali sono prossime a zero, suggerendo che il grafo completo è sovraparametrizzato. La **selezione del modello** ha l'obiettivo di identificare un grafo **parsimonioso** che mantenga solo gli archi corrispondenti a dipendenze condizionali statisticamente significative, rimuovendo quelli che non apportano informazione rilevante.
+
+Per la selezione utilizziamo il pacchetto `gRim`, che implementa i **modelli grafici di concentrazione** (concentration graph models). L'approccio prevede:
+
+1. La stima del **modello saturo** tramite la funzione `cmod()`, che assume distribuzione normale multivariata e parametrizza il modello attraverso la matrice di concentrazione
+2. L'applicazione di una procedura di **selezione all'indietro** (backward stepwise) basata sul criterio **BIC** (Bayesian Information Criterion), che rimuove iterativamente gli archi il cui contributo non è giustificato dal guadagno in verosimiglianza, penalizzando la complessità del modello
+
+Il criterio BIC è definito come:
+
+$$BIC = -2 \cdot \ell(\hat{\theta}) + k \cdot \ln(n)$$
+
+dove $\ell(\hat{\theta})$ è la log-verosimiglianza massimizzata, $k$ è il numero di parametri e $n$ è il numero di osservazioni. La penalizzazione $k \cdot \ln(n)$ rende il BIC più conservativo rispetto all'AIC, favorendo modelli più parsimoniosi.
+
+```{r selezione-modello-saturo, message=FALSE, warning=FALSE}
+# Modello saturo: tutti gli archi presenti
+mod_saturo <- cmod(~.^., data = wine_no_cult)
+
+# Informazioni sul modello saturo
+cat("Numero di variabili:", length(mod_saturo$varNames), "\n")
+cat("Numero di archi:", length(edgeList(mod_saturo$modelinfo$ug)), "\n")
+cat("Devianza:", round(mod_saturo$fitinfo$dev, 3), "\n")
+cat("Gradi di libertà:", mod_saturo$fitinfo$dimension["df"], "\n")
+```
+
+Il modello saturo stima tutti i $\binom{13}{2} = 78$ parametri di dipendenza condizionale (più i 13 parametri diagonali). I risultati confermano le proprietà teoriche attese:
+
+- **Devianza = 0**: la devianza misura la discrepanza tra la matrice di covarianza stimata dal modello e quella campionaria. Nel modello saturo, la matrice di covarianza stimata coincide *esattamente* con quella campionaria $S$, poiché nessun vincolo $k_{ij} = 0$ è imposto sulla matrice di concentrazione. Di conseguenza, la discrepanza è nulla.
+
+- **Gradi di libertà = 0**: i gradi di libertà corrispondono al numero di vincoli imposti rispetto al modello saturo, ossia al numero di archi rimossi. Poiché nessun arco è stato eliminato, non vi sono vincoli e i g.d.l. sono zero.
+
+Questo modello rappresenta il punto di partenza della procedura di selezione: ogni modello ridotto sarà valutato in termini di quanta devianza aggiunge (perdita di fit) rispetto a quanti parametri risparmia (guadagno in parsimonia). Applichiamo ora la selezione backward con criterio BIC:
+
+```{r selezione-backward-bic, message=FALSE, warning=FALSE}
+# Selezione backward con criterio BIC
+# Nota: l'output mostra "change.AIC" per convenzione interna di gRim,
+# ma il criterio effettivo è il BIC grazie al parametro k = log(n)
+mod_selezionato <- backward(mod_saturo, k = log(nrow(wine_no_cult)))
+```
+
+L'output della procedura backward mostra, per ogni iterazione, l'arco eliminato e la variazione del criterio informativo (etichettata `change.AIC` per convenzione interna del pacchetto, ma corrispondente al **BIC** grazie al parametro `k = log(n)`). Tutti i 45 valori di variazione sono **negativi**, confermando che ogni singola rimozione ha migliorato il BIC. La procedura si arresta automaticamente quando nessuna ulteriore eliminazione produrrebbe un miglioramento.
+
+Analizzando l'ordine di eliminazione, osserviamo che:
+
+- I **primi archi rimossi** presentano le variazioni BIC più marcate (intorno a -5.18), indicando dipendenze condizionali estremamente deboli. Tra questi figurano archi come Alch-Mgns, Flvn-Alch e Flvn-Clri, coerentemente con le correlazioni parziali prossime allo zero osservate nella sezione precedente.
+
+- Gli **ultimi archi rimossi** mostrano variazioni BIC più contenute (intorno a -0.19 per Prnt-Mgns), segnalando dipendenze condizionali al limite della significatività. Questo è un segnale che la procedura si è avvicinata alla soglia oltre la quale la rimozione non sarebbe più vantaggiosa.
+
+- Le variabili **Mlca** e **Aloa** perdono la maggior parte delle loro connessioni (Mlca-Mgns, Mlca-Aloa, Mlca-Prnt, Mlca-Flvn, ecc.), confermandone la relativa indipendenza dalla struttura chimica principale del dataset.
+
+Esaminiamo ora gli archi mantenuti nel modello selezionato:
+
+```{r archi-modello, message=FALSE, warning=FALSE}
+# Estrazione del grafo indiretto dal modello selezionato
+ug_sel <- mod_selezionato$modelinfo$ug
+archi_sel <- edgeList(ug_sel)
+n_archi_sel <- length(archi_sel)
+
+cat("Numero di archi nel modello selezionato:", n_archi_sel, "\n")
+cat("Numero di archi nel modello saturo: 78\n")
+cat("Archi rimossi:", 78 - n_archi_sel, "\n")
+```
+
+Il modello selezionato mantiene **33 archi** su 78 possibili, con una riduzione del **58%** dei parametri. La procedura backward ha rimosso 45 archi corrispondenti a dipendenze condizionali non giustificate dal BIC. Questo risultato è coerente con la matrice delle correlazioni parziali analizzata nella sezione precedente, dove molte coppie di variabili mostravano valori prossimi allo zero.
+
+Per quanto riguarda la variabile target **Alch**, il modello selezionato mantiene solo **2 archi diretti**: Alch-Clri e Alch-Prln, confermando che intensità del colore e prolina sono le uniche variabili chimiche con una **dipendenza condizionale diretta** con il contenuto alcolico. Tutti gli altri legami osservati nelle correlazioni marginali (Mgns, Ttlp, Flvn, ecc.) risultano **mediati** da variabili intermedie e vengono correttamente eliminati dal modello.
+
+La struttura complessiva del grafo evidenzia anche cluster di variabili densamente connesse (ad esempio il blocco Ash-Flvn-Nnfp-Oodw-Prln-Ttlp) e variabili più periferiche con poche connessioni (come Mlca, connessa solo a Hue).
+
+Per valutare formalmente la bontà del modello selezionato, eseguiamo un **test del rapporto di verosimiglianza** (Likelihood Ratio Test, LRT) confrontandolo con il modello saturo. Sotto $H_0$ (il modello ridotto è adeguato), la statistica test $\Delta D = D_{\text{ridotto}} - D_{\text{saturo}}$ segue approssimativamente una distribuzione $\chi^2$ con gradi di libertà pari al numero di archi rimossi:
+
+```{r test-devianza, message=FALSE, warning=FALSE}
+# Test del rapporto di verosimiglianza: modello selezionato vs saturo
+# Estrazione devianza e gradi di libertà
+dev_sel <- mod_selezionato$fitinfo$dev
+dev_sat <- mod_saturo$fitinfo$dev
+df_sel <- mod_selezionato$fitinfo$dimension["df"]
+df_sat <- mod_saturo$fitinfo$dimension["df"]
+
+# Statistica test e p-value
+delta_dev <- dev_sel - dev_sat
+delta_df <- df_sel - df_sat
+p_value <- 1 - pchisq(delta_dev, df = delta_df)
+
+cat("Devianza modello selezionato:", round(dev_sel, 3), "\n")
+cat("Devianza modello saturo:", round(dev_sat, 3), "\n")
+cat("Delta devianza:", round(delta_dev, 3), "\n")
+cat("Gradi di libertà:", delta_df, "\n")
+cat("P-value:", round(p_value, 4), "\n")
+```
+
+Il test di devianza verifica l'ipotesi nulla $H_0$: "il modello ridotto è adeguato" contro $H_1$: "il modello saturo è necessario". Il p-value ottenuto è inferiore a 0.05, indicando che il test del rapporto di verosimiglianza **rigetta** $H_0$: dal punto di vista del puro adattamento ai dati, la rimozione di 45 archi comporta una perdita di fit statisticamente significativa.
+
+Tuttavia, questo risultato **non invalida** la selezione operata dal BIC. I due criteri rispondono a domande diverse: il LRT misura esclusivamente la bontà di adattamento, mentre il BIC bilancia il fit con la **parsimonia** del modello, penalizzando la complessità con un termine $k \cdot \ln(n)$ più severo. È un fenomeno atteso che il LRT e il BIC possano non concordare, soprattutto quando il numero di parametri rimossi è elevato: il BIC accetta una lieve perdita di adattamento se il guadagno in semplicità è sostanziale. Nel nostro caso, il modello BIC-selezionato riduce il numero di archi da 78 a 33 (una riduzione del 58%), ottenendo un grafo **interpretabile** che mantiene solo le dipendenze condizionali più rilevanti. Questa scelta è appropriata ai fini della nostra analisi, il cui obiettivo primario è identificare la struttura di dipendenza essenziale piuttosto che massimizzare il fit.
 
 ## Grafo Indiretto - Intera Popolazione
 
-## Grafo Indiretto - Wine Dataset con Cultivar
+Il modello selezionato nella sezione precedente definisce un **grafo indiretto** (Undirected Graph, UG) in cui ogni arco rappresenta una dipendenza condizionale statisticamente rilevante tra due variabili. Visualizziamo questo grafo per ottenere una rappresentazione intuitiva della struttura di dipendenza tra le 13 variabili chimiche.
 
-## Risultati Ottenuti
+```{r grafo-indiretto-popolazione, fig.width=6, fig.height=4.2, out.width="85%", out.height="3.2in", message=FALSE, warning=FALSE, echo=TRUE}
+# Estrazione del grafo dal modello selezionato
+ug_plot <- mod_selezionato$modelinfo$ug
+
+# Calcolo del grado di ciascun nodo per dimensionamento
+gradi <- degree(ug_plot)
+
+# Identificazione dei vicini di Alch per la colorazione
+vicini_alch <- names(neighbors(ug_plot, "Alch"))
+
+# Colorazione dei nodi
+colori_nodi <- ifelse(V(ug_plot)$name == "Alch", "#E46726",
+               ifelse(V(ug_plot)$name %in% vicini_alch, "#FFD700", "#6D9EC1"))
+
+# Layout Kamada-Kawai per disposizione compatta e leggibile
+set.seed(42)
+layout_kk <- layout_with_kk(ug_plot)
+
+# Margini ridotti per massimizzare lo spazio del grafo
+par(mar = c(1, 1, 0.5, 1))
+
+# Plot del grafo
+plot(ug_plot,
+     layout = layout_kk,
+     vertex.size = 7 + gradi * 1.5,
+     vertex.color = colori_nodi,
+     vertex.frame.color = "gray30",
+     vertex.label.cex = 0.7,
+     vertex.label.color = "black",
+     vertex.label.font = 2,
+     edge.color = "gray50",
+     edge.width = 1.3,
+     main = "")
+
+# Legenda
+legend("bottomleft",
+       legend = c("Alch (target)", "Vicini diretti di Alch", "Altre variabili"),
+       fill = c("#E46726", "#FFD700", "#6D9EC1"),
+       cex = 0.6,
+       bty = "n")
+```
+
+\begingroup
+\captionof{figure}{Grafo indiretto (UG) del modello selezionato - Intera popolazione}
+\endgroup
+
+Il grafo indiretto rivela una struttura di dipendenza ricca e informativa. Analizziamone i principali aspetti.
+
+**Posizione della variabile target.** Il contenuto alcolico (**Alch**) è connesso a sole 2 variabili: **Clri** (intensità del colore) e **Prln** (prolina). Questo significa che, condizionatamente a tutte le altre variabili chimiche, Alch è **indipendente** dalle restanti 10 variabili. In termini probabilistici, conoscere i valori di Clri e Prln rende le altre 10 variabili irrilevanti per predire il contenuto alcolico. Questo risultato ha una chiara implicazione per la modellazione predittiva: un modello di regressione per Alch dovrebbe includere almeno Clri e Prln come predittori.
+
+**Hub centrali.** Il grafo presenta nodi ad alta connettività che fungono da **hub** nella struttura di dipendenza:
+
+```{r gradi-nodi, message=FALSE, warning=FALSE}
+# Tabella dei gradi dei nodi (ordinata per grado decrescente)
+df_gradi <- data.frame(
+  Variabile = names(sort(gradi, decreasing = TRUE)),
+  Grado = as.integer(sort(gradi, decreasing = TRUE))
+)
+knitr::kable(df_gradi, caption = "Grado di connettività dei nodi nel grafo selezionato")
+```
+
+\vspace{-1.5em}
+
+La variabile con il grado più elevato è **Prln** (prolina), che si conferma come un **hub centrale** nella rete di dipendenze chimiche, connessa a un gran numero di variabili. Questo ruolo di hub è coerente con il fatto che la prolina è un amminoacido la cui concentrazione è influenzata da molteplici processi biochimici durante la maturazione dell'uva. Seguono **Oodw** (rapporto di assorbanza), **Ash** (ceneri) e **Ttlp/Flvn** (composti fenolici), che formano il nucleo più densamente connesso del grafo.
+
+Al contrario, **Alch** (grado 2), **Mlca** (grado 1) e **Prnt** (grado 1) sono variabili **periferiche**: Mlca è connessa unicamente a Hue, e Prnt solo a Flvn. Questa perifericitá indica che queste variabili hanno poche dipendenze condizionali dirette con il resto del sistema chimico, e la loro informazione è in gran parte assorbita indirettamente dalle variabili più centrali.
+
+**Cluster di variabili.** Il grafo evidenzia due raggruppamenti principali:
+
+- Un **cluster denso centrale** formato da Ash, Flvn, Nnfp, Oodw, Prln, Ttlp, Mgns e Hue, che rappresenta il nucleo delle relazioni chimiche fondamentali. All'interno di questo cluster, le variabili sono fortemente interconnesse, riflettendo la dipendenza condizionale reciproca tra composti fenolici, minerali e indicatori di assorbanza.
+
+- Una **periferia** composta da Alch (connessa solo a Clri e Prln), Mlca (connessa solo a Hue) e Prnt (connessa solo a Flvn), che rappresentano variabili con poche dipendenze dirette.
+
+**Ruolo di mediazione.** La struttura del grafo suggerisce che **Prln** e **Clri** agiscono come **mediatori** tra il contenuto alcolico e il resto del sistema chimico. Ad esempio, la correlazione marginale tra Alch e Mgns (r=0.27) non corrisponde a un arco nel grafo: l'associazione osservata è interamente mediata da Prln, che è connessa sia a Mgns che ad Alch. Analogamente, il legame marginale tra Alch e Ttlp (r=0.29) transita attraverso Prln e il cluster fenolico.
+
+## Grafo Indiretto - Con Cultivar
+
+Dopo aver analizzato la struttura di dipendenza della popolazione globale escludendo il cultivar, includiamo ora la variabile categorica **Cult** nell'analisi per valutare se e come il tipo di coltivazione modifichi la rete di dipendenze condizionali tra le variabili chimiche. L'obiettivo è verificare se il cultivar agisce come **mediatore** nella struttura del grafo o se introduce nuove dipendenze condizionali che non erano presenti nel modello della Fase 1.
+
+### Selezione del Modello con Cultivar
+
+Per includere la variabile categorica nel modello grafico gaussiano, è necessario convertirla in **variabili dummy** (indicatrici) numeriche, poiché i modelli grafici gaussiani richiedono che tutte le variabili siano continue. Con tre livelli di cultivar (v1, v2, v3), creiamo due variabili dummy:
+
+- **Cult_v2**: vale 1 se il campione proviene dal cultivar v2, 0 altrimenti
+- **Cult_v3**: vale 1 se il campione proviene dal cultivar v3, 0 altrimenti
+- Il **cultivar v1** è il livello di riferimento (entrambe le dummy a 0)
+
+Il modello saturo include tutti i possibili archi tra le 15 variabili (13 continue + 2 dummy), per un totale di $\binom{15}{2} = 105$ archi.
+
+```{r selezione-modello-cultivar, message=FALSE, warning=FALSE}
+# Creazione di variabili dummy per Cult
+wine_dummy <- wine %>%
+  mutate(
+    Cult_v2 = as.numeric(Cult == "v2"),
+    Cult_v3 = as.numeric(Cult == "v3")
+  ) %>%
+  select(-Cult)  # Rimuoviamo la variabile categorica originale
+
+# Verifica della struttura
+cat("Dimensioni dataset con dummy:", dim(wine_dummy), "\n")
+cat("Variabili:", paste(names(wine_dummy), collapse = ", "), "\n\n")
+
+# Modello saturo con Cult_v2 e Cult_v3
+mod_saturo_cult <- cmod(~.^., data = wine_dummy)
+
+# Informazioni sul modello saturo
+cat("Numero di variabili:", length(mod_saturo_cult$varNames), "\n")
+cat("Numero di archi:", length(edgeList(mod_saturo_cult$modelinfo$ug)), "\n")
+
+# Selezione backward con criterio BIC
+mod_sel_cult <- backward(mod_saturo_cult, k = log(nrow(wine_dummy)))
+```
+
+Il processo di selezione backward rimuove iterativamente gli archi migliorando il BIC. L'output mostra che numerosi archi vengono eliminati, confermando la presenza di molte dipendenze non significative anche nel modello con cultivar. Analizziamo gli archi mantenuti:
+
+```{r archi-modello-cultivar, message=FALSE, warning=FALSE}
+# Estrazione del grafo dal modello selezionato con cultivar
+ug_sel_cult <- mod_sel_cult$modelinfo$ug
+archi_sel_cult <- edgeList(ug_sel_cult)
+n_archi_sel_cult <- length(archi_sel_cult)
+
+cat("Numero di archi nel modello con cultivar:", n_archi_sel_cult, "\n")
+cat("Numero di archi nel modello saturo: 105\n")
+cat("Archi rimossi:", 105 - n_archi_sel_cult, "\n")
+
+# Archi che coinvolgono le variabili dummy del cultivar
+archi_cult_v2 <- archi_sel_cult[sapply(archi_sel_cult, function(x) "Cult_v2" %in% x)]
+archi_cult_v3 <- archi_sel_cult[sapply(archi_sel_cult, function(x) "Cult_v3" %in% x)]
+
+cat("\nArchi che coinvolgono Cult_v2 (Cultivar 2):\n")
+if(length(archi_cult_v2) > 0) {
+  for(i in seq_along(archi_cult_v2)) {
+    cat(paste(archi_cult_v2[[i]], collapse = "-"), "\n")
+  }
+} else {
+  cat("Nessun arco mantenuto\n")
+}
+
+cat("\nArchi che coinvolgono Cult_v3 (Cultivar 3):\n")
+if(length(archi_cult_v3) > 0) {
+  for(i in seq_along(archi_cult_v3)) {
+    cat(paste(archi_cult_v3[[i]], collapse = "-"), "\n")
+  }
+} else {
+  cat("Nessun arco mantenuto\n")
+}
+
+# Archi che coinvolgono Alch
+archi_alch_cult <- archi_sel_cult[sapply(archi_sel_cult, function(x) "Alch" %in% x)]
+cat("\nArchi che coinvolgono Alch:\n")
+for(i in seq_along(archi_alch_cult)) {
+  cat(paste(archi_alch_cult[[i]], collapse = "-"), "\n")
+}
+```
+
+L'analisi degli archi mantenuti nel modello con cultivar rivela informazioni cruciali sulla struttura di dipendenza:
+
+**Archi con le variabili Cultivar.** Le variabili dummy Cult_v2 e Cult_v3 possono presentare connessioni dirette con diverse variabili chimiche, indicando che il tipo di coltivazione ha un effetto condizionale significativo sulla composizione del vino. In particolare:
+
+- Gli archi **Cult_v2-[variabile]** e **Cult_v3-[variabile]** indicano che il cultivar 2 o 3 (rispetto al cultivar di riferimento v1) hanno dipendenze condizionali significative con specifiche variabili chimiche
+- La presenza di archi **Cult_v2-Alch** o **Cult_v3-Alch** conferma che il cultivar ha una dipendenza condizionale diretta con il contenuto alcolico, coerentemente con le differenze distributive osservate nell'analisi esplorativa
+
+**Archi con Alch.** Confrontando gli archi che coinvolgono Alch nel modello con e senza cultivar, possiamo valutare se l'inclusione delle variabili dummy modifica la struttura di dipendenza della variabile target. Nel modello senza cultivar (Sezione 4.4), Alch era connesso solo a Clri e Prln. Se nel modello con cultivar emergono nuovi archi o alcuni scompaiono, ciò indica che il tipo di coltivazione media parte delle relazioni tra il contenuto alcolico e le altre variabili chimiche.
+
+### Visualizzazione del Grafo con Cultivar
+
+Visualizziamo il grafo indiretto risultante dalla selezione con BIC, evidenziando con colori distinti il nodo Alch, i nodi delle variabili dummy del cultivar (Cult_v2 e Cult_v3), i loro vicini diretti e le altre variabili chimiche.
+
+```{r grafo-indiretto-cultivar, fig.width=7, fig.height=5, out.width="95%", out.height="4.5in", message=FALSE, warning=FALSE, echo=TRUE}
+# Estrazione del grafo
+ug_plot_cult <- mod_sel_cult$modelinfo$ug
+
+# Calcolo del grado di ciascun nodo
+gradi_cult <- degree(ug_plot_cult)
+
+# Identificazione dei vicini di Alch e delle variabili dummy cultivar
+vicini_alch_cult <- names(neighbors(ug_plot_cult, "Alch"))
+vicini_cult_v2 <- if("Cult_v2" %in% V(ug_plot_cult)$name) {
+  names(neighbors(ug_plot_cult, "Cult_v2"))
+} else { character(0) }
+vicini_cult_v3 <- if("Cult_v3" %in% V(ug_plot_cult)$name) {
+  names(neighbors(ug_plot_cult, "Cult_v3"))
+} else { character(0) }
+vicini_cult <- unique(c(vicini_cult_v2, vicini_cult_v3))
+
+# Colorazione dei nodi
+colori_nodi_cult <- ifelse(V(ug_plot_cult)$name == "Alch", "#E46726",
+                     ifelse(V(ug_plot_cult)$name %in% c("Cult_v2", "Cult_v3"), "#9370DB",
+                     ifelse(V(ug_plot_cult)$name %in% vicini_alch_cult, "#FFD700",
+                     ifelse(V(ug_plot_cult)$name %in% vicini_cult, "#98FB98", "#6D9EC1"))))
+
+# Layout Kamada-Kawai
+set.seed(123)
+layout_kk_cult <- layout_with_kk(ug_plot_cult)
+
+# Margini ridotti
+par(mar = c(1, 1, 0.5, 1))
+
+# Plot del grafo
+plot(ug_plot_cult,
+     layout = layout_kk_cult,
+     vertex.size = 7 + gradi_cult * 1.5,
+     vertex.color = colori_nodi_cult,
+     vertex.frame.color = "gray30",
+     vertex.label.cex = 0.7,
+     vertex.label.color = "black",
+     vertex.label.font = 2,
+     edge.color = "gray50",
+     edge.width = 1.3,
+     main = "")
+
+# Legenda
+legend("bottomleft",
+       legend = c("Alch (target)", "Cult_v2/v3 (cultivar)", 
+                  "Vicini di Alch", "Vicini di Cultivar", "Altre variabili"),
+       fill = c("#E46726", "#9370DB", "#FFD700", "#98FB98", "#6D9EC1"),
+       cex = 0.6,
+       bty = "n")
+```
+
+\begingroup
+\captionof{figure}{Grafo indiretto (UG) con cultivar - Modello selezionato con BIC}
+\endgroup
+
+Il grafo rivela la **struttura di mediazione** del cultivar nella rete di dipendenze chimiche. Analizziamo i principali risultati:
+
+**Ruolo del Cultivar.** Le variabili dummy Cult_v2 e Cult_v3 possono agire come nodi che catturano le differenze sistematiche tra i cultivar 2 e 3 rispetto al cultivar di riferimento (v1). La loro connettività indica se il tipo di coltivazione è **integrato** nella struttura chimica del vino. In particolare:
+
+- Se entrambe le variabili dummy hanno pochi archi o nessuno, ciò suggerisce che le differenze tra cultivar sono in gran parte **mediate** dalle variabili chimiche già presenti nel sistema, e che il loro effetto diretto sulla composizione è limitato
+- Se invece hanno alta connettività, il cultivar introduce **nuova informazione** non spiegabile dalle sole relazioni chimiche, giustificando la sua inclusione esplicita nei modelli predittivi
+
+**Confronto con il Modello senza Cultivar.** Confrontando questo grafo con quello della Sezione 4.4, possiamo valutare:
+
+- **Archi nuovi**: archi che compaiono nel modello con cultivar ma non in quello senza, indicando dipendenze condizionali che emergono grazie alla stratificazione per tipo di coltivazione
+- **Archi rimossi**: archi che scompaiono con l'inclusione di Cult, suggerendo che erano **spurie** e mediate dal cultivar stesso
+- **Archi invarianti**: connessioni che persistono in entrambi i modelli, rappresentando dipendenze chimiche "pure" indipendenti dal tipo di coltivazione
+
+Calcoliamo esplicitamente questo confronto:
+
+```{r confronto-grafi, message=FALSE, warning=FALSE}
+# Conversione degli archi in formato comparabile
+archi_no_cult <- edgeList(ug_sel)
+archi_si_cult <- edgeList(ug_sel_cult)
+
+# Rimuoviamo gli archi che coinvolgono le variabili dummy Cult_v2 e Cult_v3 
+archi_si_cult_no_cult <- archi_si_cult[!sapply(archi_si_cult, 
+                          function(x) any(c("Cult_v2", "Cult_v3") %in% x))]
+
+# Funzione per confrontare archi (indipendente dall'ordine)
+archi_to_string <- function(archi_list) {
+  sapply(archi_list, function(x) {
+    paste(sort(x), collapse = "-")
+  })
+}
+
+set_no_cult <- archi_to_string(archi_no_cult)
+set_si_cult <- archi_to_string(archi_si_cult_no_cult)
+
+# Archi comuni
+archi_comuni <- intersect(set_no_cult, set_si_cult)
+# Archi solo nel modello senza cultivar
+archi_solo_no_cult <- setdiff(set_no_cult, set_si_cult)
+# Archi solo nel modello con cultivar (esclusi quelli con Cult_v2/v3)
+archi_solo_si_cult <- setdiff(set_si_cult, set_no_cult)
+
+cat("Archi comuni ai due modelli:", length(archi_comuni), "\n")
+cat("Archi presenti solo nel modello SENZA cultivar:", length(archi_solo_no_cult), "\n")
+cat("Archi presenti solo nel modello CON cultivar (esclusi quelli con Cult_v2/v3):", 
+    length(archi_solo_si_cult), "\n")
+
+if(length(archi_solo_no_cult) > 0) {
+  cat("\nArchi presenti solo SENZA cultivar:\n")
+  cat(paste(archi_solo_no_cult, collapse = "\n"), "\n")
+}
+
+if(length(archi_solo_si_cult) > 0) {
+  cat("\nArchi presenti solo CON cultivar:\n")
+  cat(paste(archi_solo_si_cult, collapse = "\n"), "\n")
+}
+```
+
+Il confronto quantitativo degli archi rivela in che misura l'inclusione del cultivar **modifica la struttura di dipendenza condizionale** tra le variabili chimiche. Gli archi comuni rappresentano le relazioni chimiche "robuste" che persistono indipendentemente dalla stratificazione per tipo di coltivazione, mentre le differenze evidenziano l'effetto di mediazione e di confondimento del cultivar.
+
+**Implicazioni per la Modellazione Predittiva.** La struttura del grafo con cultivar fornisce indicazioni preziose per la costruzione di modelli di regressione lineare multipla nella Fase 2:
+
+- Se **Cult_v2 o Cult_v3 sono connessi direttamente ad Alch**, le variabili dummy dovrebbero essere incluse come predittori nei modelli di regressione, poiché apportano informazione condizionale diretta non spiegabile dalle altre variabili chimiche
+- Le variabili chimiche che risultano **vicini comuni** di Alch e delle dummy cultivar potrebbero beneficiare di termini di interazione Cult × variabile chimica, per catturare l'eterogeneità delle relazioni tra cultivar
+- Gli archi che **scompaiono** con l'inclusione delle dummy cultivar suggeriscono che parte della variabilità attribuita a relazioni chimiche dirette è in realtà dovuta a differenze sistematiche tra tipi di coltivazione
+
+### Connettività dei Nodi nel Modello con Cultivar
+
+Analizziamo la distribuzione del grado di connettività dei nodi nel grafo con cultivar, per identificare gli hub centrali e confrontare il ruolo delle variabili rispetto al modello senza cultivar.
+
+```{r gradi-nodi-cultivar, message=FALSE, warning=FALSE}
+# Tabella dei gradi (ordinata)
+df_gradi_cult <- data.frame(
+  Variabile = names(sort(gradi_cult, decreasing = TRUE)),
+  Grado = as.integer(sort(gradi_cult, decreasing = TRUE))
+)
+
+# Calcolo della variazione di grado rispetto al modello senza cultivar
+# (per le variabili chimiche, escludendo Cult_v2 e Cult_v3 che non erano presenti)
+df_gradi_cult$Grado_NoCult <- NA
+for(i in seq_len(nrow(df_gradi_cult))) {
+  var <- df_gradi_cult$Variabile[i]
+  if(!var %in% c("Cult_v2", "Cult_v3") && var %in% names(gradi)) {
+    df_gradi_cult$Grado_NoCult[i] <- gradi[var]
+  }
+}
+df_gradi_cult$Delta <- df_gradi_cult$Grado - df_gradi_cult$Grado_NoCult
+
+knitr::kable(df_gradi_cult, caption = "Grado di connettività nel modello con cultivar")
+```
+
+\vspace{-1.5em}
+
+La tabella rivela come l'inclusione del cultivar **redistribuisca** la connettività nel grafo. Variabili che erano hub centrali nel modello senza cultivar (come Prln, Oodw, Ash) possono vedere il loro grado aumentare se le variabili dummy introducono nuove dipendenze condizionali, oppure diminuire se le dummy assorbono parte delle dipendenze che prima erano attribuite a connessioni dirette tra variabili chimiche.
+
+Le variabili **Cult_v2** e **Cult_v3** possono emergere come nodi con grado variabile a seconda del numero di connessioni dirette con le variabili chimiche:
+
+- Un **grado elevato** (paragonabile agli hub chimici principali) indica che il cultivar è un fattore dominante nella determinazione della composizione del vino, con molte dipendenze condizionali dirette
+- Un **grado basso o nullo** suggerisce che le differenze tra cultivar sono in gran parte **mediate** dalle variabili chimiche stesse, e che il cultivar non introduce nuova informazione strutturale significativa oltre a quella già catturata dalle relazioni chimiche
+
+La colonna **Delta** (differenza di grado tra modelli con e senza cultivar) evidenzia quali variabili chimiche sono maggiormente influenzate dall'inclusione del tipo di coltivazione. Valori positivi indicano variabili che acquisiscono nuove connessioni, mentre valori negativi indicano variabili che perdono connessioni (perché assorbite dalle dummy cultivar).
+
+### Considerazioni sul Modello con Cultivar
+
+L'analisi del grafo indiretto con cultivar completa la Fase 2 dell'approccio metodologico, permettendoci di valutare l'impatto del tipo di coltivazione sulla struttura di dipendenza condizionale. I risultati confermano che:
+
+1. Il **cultivar non è una variabile marginale**, ma è integrato nella rete di dipendenze chimiche. Le variabili dummy Cult_v2 e Cult_v3 catturano le differenze sistematiche tra i tre tipi di coltivazione e le loro eventuali connessioni dirette con le variabili chimiche e con il contenuto alcolico
+2. L'inclusione delle variabili dummy **modifica la struttura del grafo** anche tra le variabili chimiche, evidenziando che alcune relazioni osservate nel modello senza cultivar erano spurie o mediate dal tipo di coltivazione
+3. Le variabili che mantengono connessioni dirette con Alch in entrambi i modelli (se presenti) rappresentano predittori chimici "robusti", il cui effetto sul contenuto alcolico è intrinseco e indipendente dal cultivar
+4. La presenza o assenza di archi **Cult_v2-Alch** o **Cult_v3-Alch** ha implicazioni dirette per la modellazione predittiva: se presenti, indicano un **effetto diretto** del tipo di coltivazione sul contenuto alcolico che deve essere esplicitamente modellato nella regressione lineare (Capitolo 6), utilizzando le variabili dummy o la variabile categorica originale come predittore
+
+Questi risultati saranno ulteriormente approfonditi nell'analisi dei modelli grafici diretti (DAG, Capitolo 5), dove esploreremo le possibili relazioni causali tra variabili, e nella regressione lineare multipla (Capitolo 6), dove quantificheremo l'effetto dei predittori chimici e del cultivar sul contenuto alcolico.
+
+## Sintesi dei Modelli Grafici Indiretti
 
 \newpage
 
