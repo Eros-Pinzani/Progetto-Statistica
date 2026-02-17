@@ -445,9 +445,58 @@ Il confronto rivela **eterogeneità marcata** nelle relazioni lineari tra cultiv
 
 ## Heatmap delle Correlazioni
 
+Le heatmap con clustering gerarchico offrono una rappresentazione complementare rispetto alla matrice di correlazione standard, raggruppando le variabili in base alla similarità dei loro profili di correlazione. Questo permette di identificare **cluster di variabili** chimicamente correlate e di comprendere la struttura latente del dataset.
+
+In questa sezione presentiamo un'unica heatmap riferita all'**intera popolazione**, poiché il suo valore aggiunto rispetto alle analisi precedenti risiede specificamente nel **clustering gerarchico**, che riordina le variabili evidenziando raggruppamenti non immediatamente visibili nella matrice di correlazione standard. Il confronto delle correlazioni tra i singoli cultivar è stato già ampiamente trattato nella sezione precedente tramite il grafico a punti, che risulta più efficace per mettere in luce le differenze cultivar-specifiche senza ridondanza. Replicare la heatmap per ciascun cultivar non aggiungerebbe informazione sostanziale rispetto a quanto già emerso.
+
+### Heatmap - Intera Popolazione
+
+Costruiamo quindi una heatmap della matrice di correlazione dell'intera popolazione, applicando il clustering gerarchico sia sulle righe che sulle colonne per evidenziare i raggruppamenti naturali tra le variabili chimiche.
+
+```{r heatmap-popolazione, fig.width=7, fig.height=5.5, fig.cap="Heatmap con clustering gerarchico della matrice di correlazione - Intera popolazione", message=FALSE, warning=FALSE, fig.pos="H"}
+# Matrice di correlazione (già calcolata in precedenza)
+cor_pop <- cor(wine_no_cult)
+
+# Heatmap con clustering gerarchico
+pheatmap(cor_pop,
+         display_numbers = TRUE,
+         number_format = "%.2f",
+         fontsize_number = 7,
+         fontsize = 9,
+         color = colorRampPalette(c("#6D9EC1", "white", "#E46726"))(100),
+         breaks = seq(-1, 1, length.out = 101),
+         clustering_method = "ward.D2",
+         clustering_distance_rows = as.dist(1 - abs(cor_pop)),
+         clustering_distance_cols = as.dist(1 - abs(cor_pop)),
+         border_color = "grey90",
+         main = "")
+```
+
+Il clustering gerarchico rivela una struttura a **blocchi** ben definita nella matrice di correlazione. Il dendrogramma separa le variabili in quattro raggruppamenti principali:
+
+- Un primo cluster comprende i **composti fenolici** (Flvn, Ttlp, Oodw e Prnt), caratterizzato da forti correlazioni positive interne (in particolare Flvn-Ttlp r=0.86 e Flvn-Oodw r=0.79). Queste variabili condividono un profilo chimico legato ai processi di maturazione e alle proprietà antiossidanti del vino.
+
+- Un secondo cluster raggruppa **Mlca, Hue e Nnfp**. Si tratta di variabili con profili di correlazione atipici rispetto ai cluster adiacenti: **Hue** presenta correlazioni positive con i fenolici (r=0.54 con Flvn) ma è più debolmente connessa al blocco Alch-Prln, mentre **Nnfp** (fenoli non-flavonoidi), pur appartenendo alla famiglia fenolica, si correla negativamente con i flavonoidi (r=-0.54), suggerendo un rapporto di compensazione nella composizione fenolica. **Mlca** (acido malico) si associa negativamente sia a Hue (r=-0.56) sia ai fenolici, collocandosi in una posizione intermedia nel dendrogramma.
+
+- Un terzo cluster raggruppa le variabili **Mgns, Clri, Alch e Prln**, legate alla struttura alcolica e cromatica del vino. All'interno di questo blocco, le correlazioni più forti con il contenuto alcolico sono quelle con Prln (r=0.64) e Clri (r=0.55), che si confermano come i predittori candidati principali. La prolina, un amminoacido la cui concentrazione aumenta con la maturazione dell'uva, è anche moderatamente correlata con l'intensità del colore (r=0.32) e il magnesio (r=0.39).
+
+- Le variabili **Ash e Aloa** formano una coppia a sé stante, legata alla componente minerale del vino, con relazioni più deboli e indipendenti rispetto ai cluster principali.
+
+Come già evidenziato dal confronto delle correlazioni per cultivar nella sezione precedente, questa struttura a blocchi rappresenta una sintesi della popolazione globale che maschera dinamiche cultivar-specifiche, rafforzando la necessità di considerare il cultivar come variabile esplicativa nei modelli successivi.
+
 ## Sintesi dell'Analisi Esplorativa
 
-\newpage
+L'analisi esplorativa ha permesso di delineare un quadro chiaro della struttura del dataset e delle relazioni tra le variabili chimiche. I risultati principali possono essere riassunti nei seguenti punti:
+
+- **Variabile target (Alch):** il contenuto alcolico presenta una distribuzione compresa tra 11% e 15% circa, con una media globale intorno a 13%. La stratificazione per cultivar rivela tre distribuzioni ben separate (Cultivar 1 > Cultivar 3 > Cultivar 2), con intervalli interquartili nettamente più ristretti rispetto alla popolazione globale.
+
+- **Predittori principali:** le variabili più fortemente correlate con il contenuto alcolico sono **Prln** (r=0.64) e **Clri** (r=0.55), seguite a distanza da Ttlp (r=0.29) e Mgns (r=0.27). Questi predittori candidati guideranno la costruzione dei modelli nelle sezioni successive.
+
+- **Multicollinearità:** il dataset presenta cluster di variabili fortemente intercorrelate, in particolare i composti fenolici (Flvn-Ttlp r=0.86, Flvn-Oodw r=0.79). Questa ridondanza informativa dovrà essere tenuta in considerazione nella fase di modellazione per evitare problemi di instabilità nelle stime.
+
+- **Eterogeneità tra cultivar:** il confronto delle correlazioni ha evidenziato che le relazioni lineari tra variabili chimiche variano significativamente tra i tre cultivar. Il Cultivar 2, in particolare, mostra correlazioni sistematicamente più deboli con il contenuto alcolico rispetto agli altri due gruppi. Questa eterogeneità giustifica l'approccio a due fasi adottato nell'analisi: nella **Fase 1** si studiano le relazioni chimiche pure sull'intera popolazione escludendo il cultivar, per cogliere la struttura di dipendenza intrinseca tra le sostanze; nella **Fase 2** si include il cultivar come variabile esplicativa, per valutare se e come il tipo di coltivazione modifichi tali relazioni e contribuisca alla previsione del contenuto alcolico.
+
+Questi risultati forniscono le basi per le analisi successive: i modelli grafici indiretti (Capitolo 4) e diretti (Capitolo 5) permetteranno di distinguere le correlazioni marginali qui osservate dalle **dipendenze condizionali** e dalle **relazioni causali** tra le variabili, mentre la regressione lineare multipla (Capitolo 6) quantificherà formalmente il contributo di ciascun predittore.\newpage
 
 # Modelli Grafici Indiretti
 
