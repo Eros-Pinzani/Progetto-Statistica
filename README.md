@@ -124,5 +124,3 @@ Il documento R Markdown è organizzato nelle seguenti sezioni:
 ## Riferimenti
 
 - UCI Machine Learning Repository - [Wine Dataset](https://archive.ics.uci.edu/ml/datasets/wine)
-
----
