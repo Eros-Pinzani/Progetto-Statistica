@@ -1788,3 +1788,9 @@ Un risultato metodologico cruciale è la **validazione triangolata** delle relaz
 Dal punto di vista **enologico**, i risultati confermano che l'effetto del cultivar sul contenuto alcolico non è riducibile alle sole caratteristiche chimiche dell'uva misurate, ma include un'influenza diretta attraverso meccanismi biologici e biochimici non completamente catturati dalle 13 variabili considerate. Questi potrebbero includere differenze nei processi fermentativi, nella composizione microbiologica o in altre proprietà biochimiche specifiche del cultivar.
 
 In conclusione, questo studio dimostra l'efficacia di un approccio statistico integrato per l'analisi di dati enologici complessi, evidenziando come l'integrazione di metodi esplorativi, grafici e predittivi possa fornire una comprensione approfondita delle relazioni tra composizione chimica, caratteristiche biologiche e qualità del vino.
+
+\newpage
+
+# Riferimenti bibliografici
+
+[1] S. Aeberhard and M. Forina. Wine. UCI Machine Learning Repository, 1992. DOI: https://doi.org/10.24432/C5PC7J.
