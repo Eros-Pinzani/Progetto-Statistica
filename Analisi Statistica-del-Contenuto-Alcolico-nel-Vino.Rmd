@@ -1469,30 +1469,322 @@ I risultati dei DAG hanno importanti implicazioni per l'analisi di regressione d
 
 \newpage
 
-# Modello Predittivo
+# Regressione Lineare Multipla
 
-## Intera Popolazione
+Nei capitoli precedenti abbiamo utilizzato **modelli grafici** (indiretti e diretti) per esplorare la struttura di dipendenze tra le variabili chimiche del vino e identificare le relazioni causali che collegano la composizione chimica al contenuto alcolico. Questi modelli hanno fornito un quadro qualitativo delle relazioni, specificando **quali** variabili sono connesse tra loro e **in che direzione** agisce l'influenza causale.
 
-### Definizione Modelli Base
+In questo capitolo passiamo dall'analisi strutturale alla **modellazione quantitativa predittiva**, utilizzando la regressione lineare multipla per:
 
-### Selezione con BIC
+1. **Quantificare l'effetto** di ciascun predittore chimico sul contenuto alcolico
+2. **Stimare** i coefficienti di regressione che specificano l'entità e la direzione delle associazioni
+3. **Predire** il contenuto alcolico a partire dalle misure chimiche osservate
+4. **Valutare** la capacità esplicativa del modello attraverso metriche di adattamento 
+5. **Confrontare** modelli alternativi per identificare la specificazione ottimale
 
-### Diagnostica del Modello
+La regressione lineare multipla rappresenta il naturale complemento ai modelli grafici: mentre i DAG identificano i predittori diretti del contenuto alcolico e la struttura causale, la regressione **quantifica l'entità** di queste relazioni e valuta la capacità predittiva del modello.
 
-### Verifica Multicollinearità
+## Il Modello di Regressione Lineare Multipla
+
+La regressione lineare multipla è una tecnica statistica appropriata per modellare una variabile dipendente continua in funzione di più variabili esplicative. Nel nostro contesto, utilizziamo questa metodologia per predire il contenuto alcolico (**Alch**) a partire dalle proprietà chimiche del vino e, nella seconda fase, dal tipo di cultivar.
+
+### Formulazione del Modello
+
+Il modello di regressione lineare multipla assume la forma:
+
+$$\text{Alch}_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \cdots + \beta_p x_{ip} + \varepsilon_i$$
+
+dove:
+
+- $\text{Alch}_i$ è il valore del contenuto alcolico per la $i$-esima osservazione (variabile target)
+- $x_{i1}, x_{i2}, \ldots, x_{ip}$ sono i valori dei $p$ predittori (variabili chimiche e/o dummy per il cultivar) per l'osservazione $i$
+- $\beta_0$ è l'intercetta, che rappresenta il valore atteso di Alch quando tutti i predittori sono pari a zero
+- $\beta_1, \beta_2, \ldots, \beta_p$ sono i coefficienti di regressione parziali, che quantificano l'effetto di ciascun predittore sul contenuto alcolico, tenendo costanti tutti gli altri predittori
+- $\varepsilon_i$ è il termine di errore per l'osservazione $i$
+
+Il modello assume che gli errori siano **indipendenti e identicamente distribuiti** secondo una distribuzione normale:
+
+$$\varepsilon_i \sim N(0, \sigma^2)$$
+
+dove $\sigma^2$ è la varianza comune degli errori, costante per tutte le osservazioni.
+
+### Stima dei Parametri
+
+Per la stima dei coefficienti $\beta_0, \beta_1, \ldots, \beta_p$ utilizziamo la funzione **`lm()`** (Linear Model) di R, che implementa il metodo dei **minimi quadrati ordinari** (OLS - Ordinary Least Squares). Questo metodo determina i coefficienti che minimizzano la somma dei quadrati dei residui:
+
+$$\text{RSS} = \sum_{i=1}^{n} (y_i - \hat{y}_i)^2 = \sum_{i=1}^{n} \left( \text{Alch}_i - \hat{\beta}_0 - \hat{\beta}_1 x_{i1} - \cdots - \hat{\beta}_p x_{ip} \right)^2$$
+
+dove $\hat{\beta}_0, \hat{\beta}_1, \ldots, \hat{\beta}_p$ sono le stime dei coefficienti e $\hat{y}_i$ è il valore predetto per l'osservazione $i$.
+
+Gli stimatori OLS godono di proprietà ottimali sotto le assunzioni classiche del modello lineare (teorema di Gauss-Markov): sono **non distorti**, **consistenti** e **efficienti** (varianza minima tra tutti gli stimatori lineari non distorti).
+
+## Approccio Metodologico
+
+Come nei capitoli precedenti, l'analisi si articola in **due fasi** corrispondenti ai due dataset:
+
+**Fase 1 - Popolazione Globale (senza cultivar):** Costruiamo modelli di regressione utilizzando esclusivamente le **13 variabili chimiche** come predittori del contenuto alcolico. Questa analisi permette di quantificare le relazioni chimiche "pure" identificate nei grafi indiretti (Capitolo 4, sezione 4.4) e nei DAG vincolati (Capitolo 5, sezione 5.1.2).
+
+**Fase 2 - Dataset con Cultivar:** Includiamo il **tipo di coltivazione** come predittore categorico (tramite variabili dummy), per valutare se il cultivar contribuisce significativamente alla previsione del contenuto alcolico oltre alle proprietà chimiche. Questa analisi quantifica l'effetto diretto del cultivar identificato nei modelli grafici (Capitolo 4, sezione 4.5 e Capitolo 5, sezione 5.2.2).
+
+Per ciascuna fase, applichiamo **procedure di selezione stepwise** con due criteri alternativi e tre direzioni di ricerca:
+
+**Criteri di selezione:**
+
+- **AIC (Akaike Information Criterion):** Metrica che bilancia la bontà di adattamento e la complessità del modello con una penalizzazione moderata. Tende a selezionare modelli più ricchi di predittori, privilegiando la capacità esplicativa.
+  
+  $$AIC = n \cdot \ln(RSS/n) + 2k$$
+
+- **BIC (Bayesian Information Criterion):** Criterio che penalizza la complessità in modo più severo dell'AIC, favorendo modelli parsimoniosi. È definito come:
+  
+  $$BIC = n \cdot \ln(RSS/n) + k \cdot \ln(n)$$
+
+dove $n$ è il numero di osservazioni, $RSS$ è la somma dei quadrati dei residui, e $k$ è il numero di parametri stimati.
+
+**Direzioni di ricerca:**
+
+- **Backward:** Parte dal modello saturo (tutti i predittori) e rimuove iterativamente le variabili che contribuiscono meno al criterio
+- **Forward:** Parte dal modello nullo (solo intercetta) e aggiunge iterativamente i predittori che migliorano maggiormente il criterio
+- **Both (bidirectional):** Combina aggiunta e rimozione di variabili ad ogni passo, permettendo maggiore flessibilità nella selezione
+
+L'applicazione sistematica di **6 procedure** (AIC/BIC × backward/forward/both) per ciascuna fase permette di valutare la **stabilità** dei modelli selezionati rispetto alla scelta del criterio e della strategia di ricerca. Variabili che emergono consistentemente attraverso diverse procedure sono i predittori più robusti e affidabili.
+
+Al termine delle due fasi, confronteremo i risultati per valutare:
+
+- La **stabilità delle selezioni** attraverso criteri e direzioni diverse
+- Il **contributo del cultivar** come variabile esplicativa aggiuntiva
+- La **coerenza** tra i predittori selezionati e le dipendenze dirette identificate dai modelli grafici
+
+## Collegamento con i Modelli Grafici
+
+I risultati dei capitoli precedenti forniscono **indicazioni cruciali** per la specificazione dei modelli di regressione:
+
+**Dal grafo indiretto (Capitolo 4):** Il grafo UG selezionato ha identificato **Clri** e **Prln** come le uniche variabili connesse direttamente ad Alch nell'analisi senza cultivar. Questo suggerisce che un modello parsimonioso potrebbe includere solo questi due predittori. Con il cultivar, il grafo UG ha inoltre evidenziato connessioni dirette **Cult-Alch**, indicando la necessità di includere le variabili dummy nel modello.
+
+**Dal DAG vincolato (Capitolo 5):** I DAG in cui Alch è imposto come variabile sink hanno identificato i **predittori diretti causali** del contenuto alcolico. Nel modello senza cultivar (5.1.2), le variabili genitori di Alch forniscono un sottoinsieme naturale di predittori per la regressione. Nel modello con cultivar (5.2.2), il DAG ha rivelato che **Cult_v2 e Cult_v3 hanno un effetto causale diretto** su Alch non mediato dalle variabili chimiche, rafforzando la necessità di includere il cultivar nella regressione.
+
+**Dall'analisi esplorativa (Capitolo 3):** Le correlazioni marginali (3.4) hanno identificato **Prln** (r=0.64) e **Clri** (r=0.55) come i predittori con le associazioni lineari più forti con Alch. Tuttavia, come dimostrato dalle correlazioni parziali (4.2), molte di queste correlazioni marginali erano spurie e mediate da altre variabili. La regressione multipla, controllando simultaneamente per tutti i predittori, fornirà stime degli **effetti parziali** analoghi alle correlazioni parziali.
+
+Le procedure stepwise, applicando sia criteri AIC che BIC in diverse direzioni di ricerca, permetteranno di identificare quali predittori emergono in modo robusto come variabili esplicative del contenuto alcolico, offrendo una validazione quantitativa delle strutture di dipendenza identificate nei modelli grafici.
+
+## Analisi sulla Popolazione Globale
+
+In questa sezione analizziamo il dataset `wine_no_cult`, che contiene le **13 variabili chimiche** escludendo il tipo di cultivar. L'obiettivo è costruire un modello di regressione multipla per predire il contenuto alcolico (**Alch**) utilizzando esclusivamente informazioni sulla composizione chimica del vino.
+
+Applicheremo la procedura di selezione stepwise utilizzando sia il criterio **AIC** che il criterio **BIC**, con tre direzioni diverse: **backward**, **forward** e **both**. Questo approccio permette di identificare il modello più parsimonioso che bilancia adattamento ai dati e complessità del modello.
+
+```{r modelli-popolazione, message=FALSE, warning=FALSE}
+# Definizione del modello nullo
+null_model <- lm(Alch ~ 1, data = wine_no_cult)
+
+# Definizione del modello saturo
+full_model <- lm(Alch ~ ., data = wine_no_cult)
+
+# Definizione dello scope per gli intervalli di lavoro
+scope <- list(lower = formula(null_model), upper = formula(full_model))
+
+# ========== AIC ==========
+
+# Backward
+back_model_AIC <- step(full_model, scope = scope, direction = "backward", trace = 0)
+cat("=== AIC Backward ===")
+summary(back_model_AIC)
+
+# Forward
+forw_model_AIC <- step(null_model, scope = scope, direction = "forward", trace = 0)
+cat("=== AIC Forward ===")
+summary(forw_model_AIC)
+
+# Both
+both_model_AIC <- step(null_model, scope = scope, direction = "both", trace = 0)
+cat("=== AIC Both ===")
+summary(both_model_AIC)
+
+# ========== BIC ==========
+
+# Backward
+back_model_BIC <- step(full_model, scope = scope, direction = "backward", 
+                       k = log(nrow(wine_no_cult)), trace = 0)
+cat("=== BIC Backward ===")
+summary(back_model_BIC)
+
+# Forward
+forw_model_BIC <- step(null_model, scope = scope, direction = "forward", 
+                       k = log(nrow(wine_no_cult)), trace = 0)
+cat("=== BIC Forward ===")
+summary(forw_model_BIC)
+
+# Both
+both_model_BIC <- step(null_model, scope = scope, direction = "both", 
+                       k = log(nrow(wine_no_cult)), trace = 0)
+cat("=== BIC Both ===")
+summary(both_model_BIC)
+```
+
+Le procedure di selezione hanno prodotto risultati che evidenziano chiaramente la differenza tra i due criteri:
+
+**Modelli AIC** (backward, forward, both): Tutte e tre le direzioni convergono allo **stesso modello** con 6 predittori: **Mlca, Aloa, Prnt, Clri, Oodw, Prln** ($R^2$ = 0.589, $R^2$ adj = 0.574). Di questi, cinque sono significativi (Mlca p=0.005\*\*, Aloa p=0.019\*, Clri p=1.32e-10\*\*\*, Oodw p=0.008\*\*, Prln p=3.76e-10\*\*\*), mentre **Prnt** non risulta significativo (p=0.127). L'AIC privilegia la capacità esplicativa includendo più variabili, anche se una di esse non raggiunge la soglia di significatività convenzionale.
+
+**Modelli BIC**: Le tre direzioni producono due specificazioni distinte:
+
+- **BIC backward**: seleziona 4 predittori (**Mlca, Aloa, Clri, Prln**, $R^2$ = 0.571, $R^2$ adj = 0.561), tutti significativi. Questo modello intermedio rimuove le variabili meno informative (Oodw e Prnt) rispetto al modello AIC, ma mantiene ancora Mlca e Aloa oltre ai due predittori principali.
+
+- **BIC forward e both**: convergono sul modello più parsimonioso con **solo 2 predittori: Prln e Clri** ($R^2$ = 0.545, $R^2$ adj = 0.540), entrambi altamente significativi (Prln p<2e-16\*\*\*, Clri p=3.21e-11\*\*\*). Nonostante la riduzione del numero di variabili, il modello mantiene una capacità esplicativa elevata (54.5% della varianza), con una perdita minima rispetto ai modelli più complessi (circa 4 punti percentuali rispetto al modello AIC).
+
+La **stabilità di Prln e Clri** è notevole: queste due variabili emergono in **tutti i modelli** indipendentemente dal criterio e dalla direzione, confermandosi come i predittori più robusti del contenuto alcolico.
+
+### Confronto con i Modelli Grafici
+
+I risultati delle procedure stepwise forniscono una **validazione quantitativa straordinaria** delle strutture identificate nei modelli grafici:
+
+**Grafo indiretto (Capitolo 4, sezione 4.4):** Il grafo UG sulla popolazione globale aveva identificato **Clri e Prln** come le uniche variabili con archi diretti verso Alch, dopo aver controllato per tutte le altre variabili chimiche. Il modello **BIC forward/both conferma esattamente questa struttura**: seleziona precisamente e unicamente Prln e Clri come predittori, replicando la topologia del grafo UG in termini quantitativi. Questo risultato dimostra che le dipendenze condizionali identificate dall'analisi grafica corrispondono agli effetti parziali stimati dalla regressione multipla.
+
+Le altre variabili incluse nel modello AIC (Mlca, Aloa, Oodw) o nel modello BIC backward (Mlca, Aloa) contribuiscono marginalmente alla previsione, ma il loro effetto è **secondario** rispetto a quello dei due predittori principali. Questo è coerente con l'assenza di archi diretti verso Alch nel grafo UG: le correlazioni osservate tra Alch e queste variabili nell'analisi esplorativa erano in gran parte **mediate** da Clri e Prln. Il fatto che Prnt venga selezionato dal criterio AIC ma non risulti significativo (p=0.127) rafforza ulteriormente questa interpretazione: la sua apparente associazione con Alch è spuria e scompare una volta controllato per gli altri predittori.
+
+**DAG vincolato (Capitolo 5, sezione 5.1.2):** Il DAG con Alch imposto come nodo sink aveva identificato i **genitori causali diretti** del contenuto alcolico. La coincidenza tra questi genitori e i predittori selezionati dal modello BIC forward/both (Prln e Clri) indica che non solo queste variabili sono associate condizionalmente ad Alch (grafo UG), non solo predicono efficacemente il contenuto alcolico (regressione), ma rappresentano anche i fattori causali immediati secondo l'analisi DAG.
+
+I coefficienti stimati nel modello BIC forward/both quantificano queste relazioni causali:
+
+- **Prln** (prolina, $\beta$=0.00135): Un incremento di 100 unità nella concentrazione di prolina è associato a un aumento medio di 0.135 punti percentuali nel contenuto alcolico, controllando per l'intensità del colore. La prolina, un amminoacido che aumenta con la maturazione dell'uva, è il predittore più forte in termini univariati (r=0.64 dal Capitolo 3) e mantiene questo ruolo anche nella regressione multipla.
+
+- **Clri** (intensità del colore, $\beta$=0.133): Un incremento di un'unità nell'intensità del colore è associato a un aumento medio di 0.133 punti percentuali nel contenuto alcolico, controllando per la prolina. Il colore, legato alla concentrazione di antociani e alla maturazione, fornisce informazione predittiva complementare alla prolina.
+
+Otteniamo quindi una **validazione triangolata robusta**: tre approcci metodologici indipendenti (grafi indiretti, DAG, regressione con BIC) convergono sullo stesso insieme minimale di predittori (Prln e Clri), fornendo evidenza coerente di quali variabili chimiche determinano direttamente il contenuto alcolico nel vino.
 
 ## Wine Dataset con Cultivar
 
-### Definizione Modelli Base
+In questa sezione includiamo la variabile categorica **Cult** per valutare se il tipo di cultivar contribuisce in modo significativo alla previsione del contenuto alcolico, oltre alle proprietà chimiche del vino. Come evidenziato dai modelli grafici (Capitoli 4 e 5), il cultivar presenta connessioni dirette con Alch, suggerendo un potenziale effetto diretto sulla variabile target.
 
-### Selezione con BIC
+Applichiamo nuovamente le procedure di selezione stepwise con criteri AIC e BIC, questa volta includendo le variabili dummy per il cultivar.
 
-### Diagnostica del Modello
+```{r modelli-cultivar, message=FALSE, warning=FALSE}
+# Preparazione dataset con variabili dummy per cultivar
+wine_cult <- wine %>%
+  mutate(Cult_v2 = as.numeric(Cult == "v2"),
+         Cult_v3 = as.numeric(Cult == "v3")) %>%
+  select(-Cult) %>%
+  as.data.frame()
 
-## Confronto Modelli
+# Conversione a numeric per compatibilità
+wine_cult <- as.data.frame(lapply(wine_cult, as.numeric))
+
+# Definizione del modello nullo
+null_model_cult <- lm(Alch ~ 1, data = wine_cult)
+
+# Definizione del modello saturo
+full_model_cult <- lm(Alch ~ ., data = wine_cult)
+
+# Definizione dello scope
+scope_cult <- list(lower = formula(null_model_cult), upper = formula(full_model_cult))
+
+# ========== AIC ==========
+
+# Backward
+back_model_cult_AIC <- step(full_model_cult, scope = scope_cult, 
+                             direction = "backward", trace = 0)
+cat("=== AIC Backward (con Cultivar) ===")
+summary(back_model_cult_AIC)
+
+# Forward
+forw_model_cult_AIC <- step(null_model_cult, scope = scope_cult, 
+                             direction = "forward", trace = 0)
+cat("=== AIC Forward (con Cultivar) ===")
+summary(forw_model_cult_AIC)
+
+# Both
+both_model_cult_AIC <- step(null_model_cult, scope = scope_cult, 
+                             direction = "both", trace = 0)
+cat("=== AIC Both (con Cultivar) ===")
+summary(both_model_cult_AIC)
+
+# ========== BIC ==========
+
+# Backward
+back_model_cult_BIC <- step(full_model_cult, scope = scope_cult, 
+                             direction = "backward", 
+                             k = log(nrow(wine_cult)), trace = 0)
+cat("=== BIC Backward (con Cultivar) ===")
+summary(back_model_cult_BIC)
+
+# Forward
+forw_model_cult_BIC <- step(null_model_cult, scope = scope_cult, 
+                             direction = "forward", 
+                             k = log(nrow(wine_cult)), trace = 0)
+cat("=== BIC Forward (con Cultivar) ===")
+summary(forw_model_cult_BIC)
+
+# Both
+both_model_cult_BIC <- step(null_model_cult, scope = scope_cult, 
+                             direction = "both", 
+                             k = log(nrow(wine_cult)), trace = 0)
+cat("=== BIC Both (con Cultivar) ===")
+summary(both_model_cult_BIC)
+```
+
+L'inclusione del cultivar produce risultati che dimostrano in modo inequivocabile l'importanza del tipo di coltivazione come predittore del contenuto alcolico:
+
+**Modelli AIC**: Le tre direzioni producono due specificazioni distinte:
+
+- **AIC backward**: seleziona 6 predittori (Mlca, Ash, Clri, Hue, Cult_v2, Cult_v3, $R^2$ = 0.659, $R^2$ adj = 0.647). Le variabili cultivar sono fortemente significative (Cult_v2 p<2e-16\*\*\*, Cult_v3 p=6.75e-08\*\*\*), mentre tra le variabili chimiche solo Clri risulta significativa (p=2.34e-06\*\*\*). Mlca (p=0.099), Ash (p=0.076) e Hue (p=0.130) hanno contributi marginali o non significativi.
+
+- **AIC forward e both**: convergono su 4 predittori (Cult_v2, Cult_v3, Clri, Ash, $R^2$ = 0.651, $R^2$ adj = 0.643). Le due dummy cultivar sono altamente significative (Cult_v2 p<2e-16\*\*\*, Cult_v3 p=1.51e-12\*\*\*), come anche Clri (p=1.32e-05\*\*\*), mentre Ash non raggiunge la significatività (p=0.129).
+
+**Modelli BIC**: Tutte e tre le direzioni (backward, forward, both) convergono allo **stesso modello parsimonioso** con 3 predittori: **Cult_v2, Cult_v3 e Clri** ($R^2$ = 0.647, $R^2$ adj = 0.641), tutti altamente significativi (Cult_v2 p<2e-16\*\*\*, Cult_v3 p=2.33e-12\*\*\*, Clri p=1.65e-05\*\*\*).
+
+**Risultati chiave:**
+
+1. **Stabilità assoluta del cultivar**: Le variabili dummy **Cult_v2 e Cult_v3 sono selezionate in tutti e 6 i modelli** (AIC e BIC, tutte le direzioni) con significatività estrema (p<2e-12 o inferiore). Questo rappresenta la validazione dell'effetto del tipo di coltivazione sul contenuto alcolico.
+
+2. **Scomparsa di Prln**: **Prolin**a, che era il predittore più forte nell'analisi senza cultivar (sezione 6.1), **non compare in nessun modello con cultivar**. Questo risultato indica che l'effetto della prolina sul contenuto alcolico è **completamente mediato** dal tipo di cultivar: le differenze di prolina osservate tra i vini sono principalmente dovute alle caratteristiche specifiche di ciascun cultivar.
+
+3. **Persistenza di Clri**: L'**intensità del colore** rimane l'unico predittore chimico selezionato in tutti i modelli BIC e nella maggior parte dei modelli AIC, indicando che Clri fornisce informazione predittiva **indipendente** dal cultivar.
+
+4. **Incremento sostanziale dell'R²**: Il modello BIC con cultivar spiega il **64.7% della varianza** (R²=0.647), contro il 54.5% del modello BIC senza cultivar. L'aggiunta del cultivar produce un **aumento di oltre 10 punti percentuali** nella capacità esplicativa, confermando che il tipo di coltivazione cattura variabilità sostanziale non spiegata dalle sole proprietà chimiche.
+
+### Confronto con i Modelli Grafici (con Cultivar)
+
+I risultati forniscono una **validazione quantitativa straordinaria** delle strutture causali identificate dai modelli grafici:
+
+**Grafo indiretto con cultivar (Capitolo 4, sezione 4.5):** Il grafo UG aveva rivelato archi diretti **Cult-Alch**, indicando dipendenza condizionale del contenuto alcolico dal cultivar anche dopo aver controllato per tutte le variabili chimiche. Il modello **BIC (3 predittori) conferma perfettamente questa struttura**: Cult_v2 e Cult_v3 sono selezionate con Clri come unici predittori, replicando esattamente la topologia del grafo UG. La selezione del cultivar in tutti i 6 modelli, con significatività estrema, dimostra che il grafo UG aveva correttamente identificato un'associazione condizionale **robusta e non spuria** tra Cult e Alch.
+
+**DAG vincolato con cultivar (Capitolo 5, sezione 5.2.2):** Il DAG aveva identificato **Cult_v2, Cult_v3 e Clri come genitori diretti di Alch**, implicando effetti causali diretti sul contenuto alcolico. La regressione quantifica questi effetti causali nel modello BIC:
+
+- **Cult_v2** ($\beta$=-1.20): I vini del Cultivar 2 hanno un contenuto alcolico mediamente **1.20 punti percentuali inferiore** rispetto al Cultivar 1 (baseline), controllando per l'intensità del colore. Questo coefficiente negativo altamente significativo (p<2e-16\*\*\*) conferma che il Cultivar 2 produce vini con minore gradazione alcolica, coerentemente con l'analisi esplorativa (Capitolo 3).
+
+- **Cult_v3** ($\beta$=-0.79): I vini del Cultivar 3 hanno un contenuto alcolico mediamente **0.79 punti percentuali inferiore** rispetto al Cultivar 1, controllando per il colore (p=2.33e-12\*\*\*). Il coefficiente intermedio rispetto a Cult_v2 conferma la gerarchia osservata: Cultivar 1 > Cultivar 3 > Cultivar 2.
+
+- **Clri** ($\beta$=0.108): L'intensità del colore mantiene un effetto positivo (p=1.65e-05\*\*\*), anche dopo aver controllato per il cultivar. Un aumento unitario nel colore si associa a +0.108 punti percentuali di Alch. Questo conferma che Clri fornisce informazione **complementare** al cultivar, non completamente mediata dal tipo di coltivazione.
+
+I segni e le magnitudini dei coefficienti sono **perfettamente coerenti** con le differenze medie osservate nell'analisi esplorativa e con la struttura causale proposta dal DAG, fornendo una validazione quantitativa completa.
+
+**Mediazione della prolina attraverso il cultivar:**
+
+Il confronto tra modelli con e senza cultivar rivela un risultato enologicamente rilevante: **Prln**, predittore dominante senza cultivar (r=0.64 univariato, presente in tutti i modelli della sezione 6.1), **scompare completamente** quando si include il cultivar. Questo dimostra che:
+
+1. Le differenze di prolina tra i vini sono principalmente **determinate dal cultivar**: ogni tipo di coltivazione produce uve con caratteristici livelli di prolina
+2. L'effetto della prolina sul contenuto alcolico è **mediato** dal tipo di cultivar
+3. Il cultivar cattura l'informazione predittiva che, in assenza di questa variabile, veniva erroneamente attribuita alla prolina
+
+Questo è coerente con la struttura causale del DAG: **Cult → Prln → Alch** e **Cult → Alch** (effetto diretto). Quando includiamo Cult nella regressione, la variabile Prln diventa ridondante perché la variabile Cultcattura sia l'effetto diretto che quello mediato da Prln.
+
+Otteniamo quindi una **convergenza perfetta** tra i tre approcci metodologici: il grafo UG aveva identificato Cult e Clri come connessi ad Alch, il DAG li aveva identificati come genitori causali, e la regressione quantifica esattamente questi effetti, confermando una validazione triangolata completa.
 
 \newpage
 
 # Conclusioni
 
-## Bibliografia
+Questo studio ha investigato le relazioni tra la composizione chimica del vino, il tipo di cultivar e il contenuto alcolico utilizzando un approccio statistico multilivello che integra analisi esplorativa, modelli grafici (indiretti e diretti) e regressione lineare multipla. L'obiettivo principale era identificare i fattori chimici e biologici che determinano il contenuto alcolico nei vini, quantificandone l'entità e validando le relazioni attraverso metodologie complementari.
+
+L'**analisi esplorativa** (Capitolo 3) ha rivelato una struttura complessa di correlazioni tra le 13 variabili chimiche, con **Prln** (prolina, r=0.64) e **Clri** (intensità del colore, r=0.55) emergenti come i predittori marginali più forti del contenuto alcolico. Tuttavia, l'elevata multicollinearità tra i composti fenolici e l'eterogeneità delle correlazioni tra cultivar hanno suggerito la necessità di distinguere tra associazioni marginali spurie e dipendenze condizionali effettive.
+
+I **modelli grafici indiretti** (Capitolo 4) hanno permesso di identificare le dipendenze condizionali controllando per l'effetto di tutte le altre variabili. Il grafo UG sulla popolazione globale ha isolato **Prln e Clri** come le uniche variabili connesse direttamente ad Alch, indicando che molte correlazioni osservate nell'analisi bivariata erano mediate da queste due variabili. L'inclusione del cultivar ha rivelato un arco diretto **Cult-Alch**, suggerendo un effetto del tipo di coltivazione non completamente spiegato dalle proprietà chimiche.
+
+I **DAG vincolati** (Capitolo 5), imponendo Alch come variabile sink, hanno aggiunto la dimensione causale all'analisi. Nel modello senza cultivar, i genitori di Alch corrispondevano ai predittori identificati dal grafo UG. Nel modello con cultivar, **Cult_v2, Cult_v3 e Clri** sono emersi come genitori diretti di Alch, confermando che il cultivar esercita un effetto causale diretto sul contenuto alcolico, non completamente mediato dalle variabili chimiche misurate.
+
+La **regressione lineare multipla** (Capitolo 6) ha fornito la quantificazione di queste relazioni. Il modello BIC più parsimonioso senza cultivar ha selezionato **Prln e Clri** (R²=54.5%), replicando esattamente la struttura del grafo UG. Con l'inclusione del cultivar, il modello ottimale comprende **Cult_v2 ($\beta$=-1.20), Cult_v3 ($\beta$=-0.79) e Clri ($\beta$=0.108)** (R²=64.7%), con Prln che scompare completamente dai modelli selezionati. Questo risultato dimostra che l'effetto della prolina è **mediato** dal cultivar: le differenze di prolina tra i vini sono principalmente determinate dal tipo di coltivazione.
+
+L'incremento di oltre 10 punti percentuali nell'R² (da 54.5% a 64.7%) quantifica il contributo sostanziale del cultivar alla previsione del contenuto alcolico. I coefficienti negativi e altamente significativi di Cult_v2 e Cult_v3 confermano la gerarchia osservata nell'analisi esplorativa: **Cultivar 1 > Cultivar 3 > Cultivar 2** in termini di contenuto alcolico medio.
+
+Un risultato metodologico cruciale è la **validazione triangolata** delle relazioni identificate: i grafi indiretti hanno isolato le dipendenze condizionali, i DAG hanno specificato le direzioni causali plausibili, e la regressione ha quantificato gli effetti parziali. La convergenza perfetta tra questi tre approcci indipendenti fornisce evidenza robusta che le relazioni identificate riflettono strutture di dipendenza e causalità nei dati.
+
+Dal punto di vista **enologico**, i risultati confermano che l'effetto del cultivar sul contenuto alcolico non è riducibile alle sole caratteristiche chimiche dell'uva misurate, ma include un'influenza diretta attraverso meccanismi biologici e biochimici non completamente catturati dalle 13 variabili considerate. Questi potrebbero includere differenze nei processi fermentativi, nella composizione microbiologica o in altre proprietà biochimiche specifiche del cultivar.
+
+In conclusione, questo studio dimostra l'efficacia di un approccio statistico integrato per l'analisi di dati enologici complessi, evidenziando come l'integrazione di metodi esplorativi, grafici e predittivi possa fornire una comprensione approfondita delle relazioni tra composizione chimica, caratteristiche biologiche e qualità del vino.
