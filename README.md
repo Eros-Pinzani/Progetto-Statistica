@@ -3,11 +3,11 @@
 [![R](https://img.shields.io/badge/R-276DC3?style=flat&logo=r&logoColor=white)](https://www.r-project.org/)
 [![RMarkdown](https://img.shields.io/badge/RMarkdown-FF6600?style=flat&logo=r&logoColor=white)](https://rmarkdown.rstudio.com/)
 
-## 📊 Descrizione del Progetto
+## Descrizione del Progetto
 
 Questo progetto presenta un'analisi statistica approfondita della composizione chimica di campioni di vino italiano, con particolare focus sul **contenuto alcolico** come variabile target. L'analisi integra tecniche avanzate di modellazione statistica per comprendere le relazioni tra le variabili chimiche e il ruolo della cultivar (tipo di coltivazione) nella determinazione del grado alcolico.
 
-## 🎯 Obiettivi
+## Obiettivi
 
 L'analisi si articola in **due fasi principali**:
 
@@ -21,7 +21,7 @@ L'analisi si articola in **due fasi principali**:
 - Determinare se il tipo di coltivazione ha un effetto diretto sul contenuto alcolico
 - Confrontare i modelli con e senza cultivar per valutare il contributo informativo di questa variabile categorica
 
-## 📁 Dataset
+## Dataset
 
 Il progetto utilizza il **Wine Dataset**, un dataset classico disponibile nel pacchetto R `gRbase`, contenente:
 
@@ -42,7 +42,7 @@ Il progetto utilizza il **Wine Dataset**, un dataset classico disponibile nel pa
   - `Prln` - Prolina
 - **1 variabile categorica**: `Cult` (Cultivar: 3 livelli corrispondenti a 3 diversi coltivatori)
 
-## 🔬 Metodologia
+## Metodologia
 
 Il progetto impiega tre approcci statistici complementari:
 
@@ -58,7 +58,7 @@ Esplorazione di possibili relazioni causali tra le variabili chimiche e il conte
 ### 3. Regressione Lineare Multipla
 Quantificazione dell'effetto dei predittori chimici sul contenuto alcolico e valutazione della capacità predittiva dei modelli inferiti dai DAG.
 
-## 🛠️ Requisiti e Dipendenze
+## Requisiti e Dipendenze
 
 ### Software Richiesto
 - **R** (versione ≥ 4.0.0)
@@ -83,7 +83,7 @@ install.packages(c(
 ))
 ```
 
-## 🚀 Come Riprodurre l'Analisi
+## Come Riprodurre l'Analisi
 
 ### Metodo 1: Knitr (Consigliato)
 1. Apri il file `Analisi Statistica-del-Contenuto-Alcolico-nel-Vino.Rmd` in RStudio
@@ -99,7 +99,7 @@ rmarkdown::render("Analisi Statistica-del-Contenuto-Alcolico-nel-Vino.Rmd",
 
 **Nota**: Per generare output PDF è necessario avere installato LaTeX (es. TinyTeX, MiKTeX o TeXLive).
 
-## 📈 Risultati Principali
+## Risultati Principali
 
 L'analisi produce i seguenti output:
 
@@ -109,7 +109,7 @@ L'analisi produce i seguenti output:
 - **Modelli di regressione**: quantificazione degli effetti predittivi sul contenuto alcolico
 - **Confronti**: valutazione del contributo della variabile cultivar nelle diverse analisi
 
-## 📝 Contenuto del Report
+## Contenuto del Report
 
 Il documento R Markdown è organizzato nelle seguenti sezioni:
 
@@ -121,14 +121,8 @@ Il documento R Markdown è organizzato nelle seguenti sezioni:
 6. **Regressione Lineare Multipla**: Modelli predittivi basati sui DAG inferiti
 7. **Conclusioni**: Sintesi dei risultati e implicazioni
 
-## 🔗 Riferimenti
+## Riferimenti
 
 - UCI Machine Learning Repository - [Wine Dataset](https://archive.ics.uci.edu/ml/datasets/wine)
 
 ---
-
-<div align="center">
-
-**Se questo progetto ti è stato utile, lascia una ⭐!**
-
-</div>
